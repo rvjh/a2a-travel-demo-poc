@@ -7,25 +7,22 @@ Everything shared goes into: common/models.py pydantic models are there
 
 This gives you a consistent contract:
 
-MCP
-  ↓
-Agent
-  ↓
-Pydantic
-  ↓
-A2A
-  ↓
-Pydantic
-  ↓
 Gateway
+   |
+Router
+   |
+Flight
+   |
+Hotel
+   |
+MCP
 
+Configuration
 
-in llm_client.py
+common/config.py
 
-More specifically, it is doing three things:
+configuration about llms and urls
 
-Configuration: Loads GROQ_API_KEY and GROQ_MODEL from .env.
-LLM initialization: Creates a ChatGroq instance.
-LLM interaction: Provides structured_complete() as a reusable method for sending prompts and getting a structured Pydantic response.
+Shared LLM common/llm.py
 
-
+llm setup

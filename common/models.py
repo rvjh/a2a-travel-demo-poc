@@ -1,116 +1,111 @@
 from typing import Literal
+
 from pydantic import BaseModel, Field
 
+
 # ============================================================
-# Generic A2A
+# A2A REQUEST
 # ============================================================
 
 class AgentRequest(BaseModel):
     message: str
 
 
+# ============================================================
+# AGENT CARD
+# ============================================================
+
 class AgentCard(BaseModel):
-    name : str
-    description : str 
-    url : str
-    skills : list[str]
+    name: str
+    description: str
+    url: str
+    skills: list[str]
 
 
 # ============================================================
-# Flight
+# FLIGHTS
 # ============================================================
 
 class Flight(BaseModel):
     airline: str
-    flight_number: str
-    origin: str
-    destination: str
-    departure_time: str
-    arrival_time: str
-    price_usd: float
+    flight: str
+    from_city: str
+    to_city: str
+    price: float
+    currency: str = "USD"
+    duration_hours: float
 
-class FlightSearchRequest(BaseModel):
-    origin: str
-    destination: str
-    departure_date: str
 
-class FlightAgentResponse(BaseModel):
+class FlightAgentResult(BaseModel):
     agent: str = "flight-agent"
-    status: Literal["completed", "failed"]
     destination: str
     flights: list[Flight]
     recommendation: str
-    tools_called: list[str]
+    tools_called: list[str] = Field(default_factory=list)
 
 
 # ============================================================
-# Hotel
+# HOTELS
 # ============================================================
 
 class Hotel(BaseModel):
     name: str
-    city: str
-    price_per_night_usd: float
-    rating: float
-    amenities: list[str]
-
-class HotelSearchRequest(BaseModel):
     destination: str
-    check_in: str
-    check_out: str
+    price_per_night: float
+    currency: str = "USD"
+    rating: float
+    nights: int
 
-class HotelAgentResponse(BaseModel):
+
+class HotelAgentResult(BaseModel):
     agent: str = "hotel-agent"
-    status: Literal["completed", "failed"]
     destination: str
     hotels: list[Hotel]
     recommendation: str
-    tools_called: list[str]
+    tools_called: list[str] = Field(default_factory=list)
 
 
 # ============================================================
-# Router
+# ROUTER
 # ============================================================
 
-class RouteDecision(BaseModel):
+class RouterDecision(BaseModel):
     destination: str
-    origin: str
-    departure_date: str
-    check_in: str
-    check_out: str
     needs_flight: bool
     needs_hotel: bool
+    reasoning: str
 
 
 # ============================================================
-# Final Travel Plan
+# TRAVEL PLAN
 # ============================================================
 
 class TravelPlan(BaseModel):
     destination: str
-    trip_summary: str
-    flight: FlightAgentResponse | None
-    hotel: HotelAgentResponse | None
-    recommendation: str
+    duration_days: int
+
+    selected_flight: Flight | None = None
+    selected_hotel: Hotel | None = None
+
+    estimated_flight_cost: float = 0
+    estimated_hotel_cost: float = 0
+    estimated_total_cost: float = 0
+
+    summary: str
+
 
 # ============================================================
-# Router response
+# COMPLETE RESPONSE
 # ============================================================
 
-class RouterAgentResponse(BaseModel):
-    agent: str = "router-agent"
+class TravelAgentResponse(BaseModel):
     status: Literal["completed", "failed"]
-    plan: TravelPlan
-    tools_called: list[str]
-    agents_called: list[str]
+    destination: str | None = None
+    duration_days: int | None = None
 
+    travel_plan: TravelPlan | None = None
 
-# ============================================================
-# Gateway
-# ============================================================
+    agents_called: list[str] = Field(default_factory=list)
+    tools_called: list[str] = Field(default_factory=list)
 
-class TravelResponse(BaseModel):
-    status: Literal["completed", "failed"]
-    latency_ms: int
-    agent_response: RouterAgentResponse
-
+    message: str | None = None

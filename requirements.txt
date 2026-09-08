@@ -6,5 +6,5 @@ httpx
 pydantic
 langgraph
 langchain_groq
-mcp
+fastmcp
 requests
