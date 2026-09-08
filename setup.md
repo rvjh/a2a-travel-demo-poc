@@ -1,114 +1,13 @@
-This gives you A2A + Router Agent + LangGraph + MCP + tools + Groq + structured Pydantic responses, while still being small enough to understand.
+Here’s a clean **README setup-only** section based on your project structure and commands.
 
-a Travel Agent POC that demonstrates all four concepts independently and together:
+ README — Setup
 
-A2A — Router Agent ↔ Flight Agent / Hotel Agent
-MCP — agents consume tools from a central FastMCP Gateway
-LangGraph — Router Agent orchestrates the workflow
-Groq — LLM reasoning + structured output
-Pydantic — shared contracts under common/
-FastAPI — HTTP service boundary for each A2A agent
-Testing — one end-to-end test client
-run_all.py — starts every service
-Structured console output matching your requested format
+# Setup
 
+## 1\. Project Structure
 
-                              USER
-                                |
-                                v
-                    +-----------------------+
-                    |    TRAVEL GATEWAY     |
-                    |       FastAPI         |
-                    |        :8000          |
-                    +-----------+-----------+
-                                |
-                                v
-                    +-----------------------+
-                    |     ROUTER AGENT      |
-                    |       LangGraph       |
-                    |        + Groq         |
-                    +-----------+-----------+
-                                |
-                 +--------------+--------------+
-                 |                             |
-                 v                             v
-       +-------------------+          +-------------------+
-       |   FLIGHT AGENT    |          |    HOTEL AGENT    |
-       |     FastAPI       |          |      FastAPI      |
-       |      :8001        |          |       :8002       |
-       +---------+---------+          +---------+---------+
-                 |                              |
-                 | A2A HTTP                     | A2A HTTP
-                 |                              |
-                 +--------------+---------------+
-                                |
-                                v
-                  +-----------------------------+
-                  |       MCP GATEWAY           |
-                  |          FastMCP             |
-                  |           :9000              |
-                  |                             |
-                  |  search_flights              |
-                  |  search_hotels               |
-                  |  flight_price                 |
-                  |  hotel_price                 |
-                  +--------------+--------------+
-                                 |
-                    +------------+------------+
-                    |                         |
-                    v                         v
-             Flight mock DB              Hotel mock DB
-
-
-There are two different communication patterns here:
-A2A
-Router Agent
-    |
-    | HTTP POST
-    v
-Flight Agent
-
-and 
-Router Agent
-    |
-    | HTTP POST
-    v
-Hotel Agent
-
-MCP 
-
-Flight Agent
-     |
-     | MCP / Streamable HTTP
-     v
-MCP Gateway
-     |
-     v
-search_flights()
-
-Hotel Agent
-     |
-     | MCP / Streamable HTTP
-     v
-MCP Gateway
-     |
-     v
-search_hotels()
-
-This separation is important.
-
-A2A answers:
-
-"Which agent should I communicate with?"
-
-MCP answers:
-
-"Which tools/resources can this agent use?"
-
-
-Folder Structure
-
-a2a-mcp-travel/
+```
+a2a-travel-demo/
 │
 ├── .env
 ├── requirements.txt
@@ -145,32 +44,69 @@ a2a-mcp-travel/
 │
 ├── tests/
 │   ├── __init__.py
+│   ├── test_mcp.py
+│   ├── check_mcp_tools.py
 │   └── test_agent.py
 │
 └── reports/
+```
 
-The important architectural distinction is:
+## 2\. Architecture
 
+ The project is divided into the following components:
+
+```
 gateway/
-    = external Travel API
+    = External Travel API
 
 agents/
-    = A2A agents
+    = A2A Agents
 
 mcp_gateway/
-    = tool gateway
+    = Tool Gateway
 
 common/
-    = contracts/shared infrastructure
+    = Contracts / Shared Infrastructure
+```
 
+## 3\. Create the Conda Environment
 
-
-
-GROQ_API_KEY=your_groq_api_key_here
-GROQ_MODEL=openai/gpt-oss-20b
+ From the project root directory, create the environment:
 
 ```
 conda create --prefix ./venv python=3.14 -y
-conda activate ./venv 
+```
+
+ Activate the environment:
+
+```
+conda activate ./venv
+```
+
+## 4\. Install Dependencies
+
+ Install the required Python packages:
+
+```
 pip install -r requirements.txt
 ```
+
+## 5\. Configure Environment Variables
+
+ Create a `.env` file in the project root:
+
+```
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_MODEL=openai/gpt-oss-20b
+```
+
+ Replace `your_groq_api_key_here` with your actual Groq API key.
+
+## 6\. Verify Setup
+
+ After completing the setup, the project should have:
+
+- The `venv` Conda environment created and activated.
+- All dependencies installed from `requirements.txt`.
+- A `.env` file containing the required Groq configuration.
+- The project structure matching the structure shown above.

@@ -884,3 +884,9 @@ Testing complete
  **In short:**
 
  > The test script acts as the client. It sends three predefined travel requests to the Travel Agent's `/plan` endpoint, measures the response time, displays the returned travel plan and records which agents and MCP tools were used. After each test, it saves the complete response as an HTML report for later inspection.
+
+ first test the mcp 
+
+ python tests/test_mcp.py
+
+

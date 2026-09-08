@@ -1,0 +1,74 @@
+
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Travel Agent Report</title>
+
+            <style>
+                body {
+                    font-family: Arial;
+                    background: #f5f7fa;
+                    padding: 30px;
+                }
+
+                pre {
+                    background: #111827;
+                    color: #e5e7eb;
+                    padding: 20px;
+                    border-radius: 8px;
+                    overflow-x: auto;
+                }
+
+                h1 {
+                    color: #111827;
+                }
+            </style>
+        </head>
+
+        <body>
+
+        <h1>Travel Agent Report</h1>
+
+        <pre>{
+  "status": "completed",
+  "latency_ms": 1734,
+  "destination": "Goa",
+  "duration_days": 3,
+  "travel_plan": {
+    "destination": "Goa",
+    "duration_days": 3,
+    "selected_flight": {
+      "airline": "IndiGo",
+      "flight": "6E-123",
+      "from_city": "Bengaluru",
+      "to_city": "Goa",
+      "price": 4500.0,
+      "currency": "INR",
+      "duration_hours": 1.2
+    },
+    "selected_hotel": {
+      "name": "Palm Resort",
+      "destination": "Goa",
+      "price_per_night": 4500.0,
+      "currency": "INR",
+      "rating": 4.6,
+      "nights": 2
+    },
+    "estimated_flight_cost": 4500.0,
+    "estimated_hotel_cost": 9000.0,
+    "estimated_total_cost": 13500.0,
+    "summary": "Recommended trip to Goa. Flight: IndiGo 6E-123. Hotel: Palm Resort. Estimated total cost: ₹13500.00."
+  },
+  "agents_called": [
+    "flight-agent",
+    "hotel-agent"
+  ],
+  "tools_called": [
+    "search_flights",
+    "search_hotels"
+  ]
+}</pre>
+
+        </body>
+        </html>
+    

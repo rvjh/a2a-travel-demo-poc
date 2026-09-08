@@ -1,0 +1,64 @@
+
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Travel Agent Report</title>
+
+            <style>
+                body {
+                    font-family: Arial;
+                    background: #f5f7fa;
+                    padding: 30px;
+                }
+
+                pre {
+                    background: #111827;
+                    color: #e5e7eb;
+                    padding: 20px;
+                    border-radius: 8px;
+                    overflow-x: auto;
+                }
+
+                h1 {
+                    color: #111827;
+                }
+            </style>
+        </head>
+
+        <body>
+
+        <h1>Travel Agent Report</h1>
+
+        <pre>{
+  "status": "completed",
+  "latency_ms": 1802,
+  "destination": "Goa",
+  "duration_days": 3,
+  "travel_plan": {
+    "destination": "Goa",
+    "duration_days": 3,
+    "selected_flight": null,
+    "selected_hotel": {
+      "name": "Palm Resort",
+      "destination": "Goa",
+      "price_per_night": 4500.0,
+      "currency": "INR",
+      "rating": 4.6,
+      "nights": 2
+    },
+    "estimated_flight_cost": 0.0,
+    "estimated_hotel_cost": 9000.0,
+    "estimated_total_cost": 9000.0,
+    "summary": "Recommended trip to Goa. Hotel: Palm Resort. Estimated total cost: ₹9000.00."
+  },
+  "agents_called": [
+    "hotel-agent"
+  ],
+  "tools_called": [
+    "search_hotels"
+  ]
+}</pre>
+
+        </body>
+        </html>
+    

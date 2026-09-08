@@ -3,6 +3,7 @@ from fastmcp import FastMCP
 
 mcp = FastMCP("Travel MCP Gateway")
 
+
 # ============================================================
 # FLIGHT DATA
 # ============================================================
@@ -76,62 +77,100 @@ HOTELS = {
 
 
 # ============================================================
-# MCP TOOLS
+# FLIGHT TOOLS
 # ============================================================
 
 @mcp.tool
-def search_flight(destination: str) -> list[dict]:
+def search_flights(destination: str) -> list[dict]:
     """
     Search available flights for a destination.
     """
-    return FLIGHTS.get(destination.lower(), [])
+    destination = destination.strip().lower()
+
+    return FLIGHTS.get(destination, [])
+
 
 @mcp.tool
 def flight_price(destination: str) -> float:
     """
     Return the cheapest flight price for a destination.
     """
+    destination = destination.strip().lower()
 
-    flights = FLIGHTS.get(destination.lower(), [])
+    flights = FLIGHTS.get(destination, [])
 
     if not flights:
         return 0.0
 
-    return min(flight["price"] for flight in flights) 
+    return min(
+        flight["price"]
+        for flight in flights
+    )
 
+
+# ============================================================
+# HOTEL TOOLS
+# ============================================================
 
 @mcp.tool
-def search_hotels(destination: str, nights: int = 2) -> list[dict]:
+def search_hotels(
+    destination: str,
+    nights: int = 2,
+) -> list[dict]:
     """
     Search available hotels for a destination.
     """
-    hotels = HOTELS.get(destination.lower(), [])
+    destination = destination.strip().lower()
+
+    hotels = HOTELS.get(destination, [])
+
     result = []
 
     for hotel in hotels:
         item = hotel.copy()
+
         item["nights"] = nights
+
+        item["total_price"] = (
+            hotel["price_per_night"] * nights
+        )
+
         result.append(item)
 
     return result
 
+
 @mcp.tool
-def hotel_price(destination: str, nights: int = 2) -> float:
+def hotel_price(
+    destination: str,
+    nights: int = 2,
+) -> float:
     """
     Return the cheapest total hotel price.
     """
-    hotels = HOTELS.get(destination.lower(), [])
+    destination = destination.strip().lower()
+
+    hotels = HOTELS.get(destination, [])
+
     if not hotels:
         return 0.0
 
-    return min(hotel["price_per_night"] * nights for hotel in hotels)
+    return min(
+        hotel["price_per_night"] * nights
+        for hotel in hotels
+    )
 
+
+# ============================================================
+# START MCP SERVER
+# ============================================================
 
 if __name__ == "__main__":
-    # FastMCP HTTP transport uses Streamable HTTP.
+    print("Starting Travel MCP Server...")
+    print("MCP URL: http://127.0.0.1:9000/mcp")
+
     mcp.run(
         transport="http",
         host="127.0.0.1",
         port=9000,
     )
-
