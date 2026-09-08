@@ -102,10 +102,7 @@ def flight_price(destination: str) -> float:
     if not flights:
         return 0.0
 
-    return min(
-        flight["price"]
-        for flight in flights
-    )
+    return min(flight["price"] for flight in flights)
 
 
 # ============================================================
@@ -113,10 +110,7 @@ def flight_price(destination: str) -> float:
 # ============================================================
 
 @mcp.tool
-def search_hotels(
-    destination: str,
-    nights: int = 2,
-) -> list[dict]:
+def search_hotels(destination: str, nights: int = 2) -> list[dict]:
     """
     Search available hotels for a destination.
     """
@@ -131,9 +125,7 @@ def search_hotels(
 
         item["nights"] = nights
 
-        item["total_price"] = (
-            hotel["price_per_night"] * nights
-        )
+        item["total_price"] = (hotel["price_per_night"] * nights)
 
         result.append(item)
 
@@ -141,10 +133,7 @@ def search_hotels(
 
 
 @mcp.tool
-def hotel_price(
-    destination: str,
-    nights: int = 2,
-) -> float:
+def hotel_price(destination: str, nights: int = 2) -> float:
     """
     Return the cheapest total hotel price.
     """
@@ -155,34 +144,31 @@ def hotel_price(
     if not hotels:
         return 0.0
 
-    return min(
-        hotel["price_per_night"] * nights
-        for hotel in hotels
-    )
+    return min(hotel["price_per_night"] * nights for hotel in hotels)
 
 
 # ============================================================
 # START MCP SERVER - Uncomment for running locally
 # ============================================================
 
-# if __name__ == "__main__":
-#     print("Starting Travel MCP Server...")
-#     print("MCP URL: http://127.0.0.1:9000/mcp")
+if __name__ == "__main__":
+    print("Starting Travel MCP Server...")
+    print("MCP URL: http://127.0.0.1:9000/mcp")
 
-#     mcp.run(
-#         transport="http",
-#         host="127.0.0.1",
-#         port=9000,
-#     )
+    mcp.run(
+        transport="http",
+        host="127.0.0.1",
+        port=9000,
+    )
 
 
 # ============================================================
 # START MCP SERVER - Uncomment for running in DOcker
 # ============================================================
 
-if __name__ == "__main__":
-    mcp.run(
-        transport="http",
-        host="0.0.0.0",
-        port=9000,
-    )
+# if __name__ == "__main__":
+#     mcp.run(
+#         transport="http",
+#         host="0.0.0.0",
+#         port=9000,
+#     )

@@ -98,10 +98,7 @@ async def handle_request(request: AgentRequest):
     # Convert MCP response to Flight models
     # --------------------------------------------------------
 
-    flights = [
-        Flight(**flight)
-        for flight in raw_flights
-    ]
+    flights = [Flight(**flight) for flight in raw_flights]
 
     # --------------------------------------------------------
     # No flights found
@@ -121,9 +118,7 @@ async def handle_request(request: AgentRequest):
     # Ask LLM to recommend
     # --------------------------------------------------------
 
-    llm_with_structure = llm.with_structured_output(
-        FlightAgentResult
-    )
+    llm_with_structure = llm.with_structured_output(FlightAgentResult)
 
     result = await llm_with_structure.ainvoke(
         f"""

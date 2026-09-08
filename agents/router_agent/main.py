@@ -1,22 +1,11 @@
 import asyncio
-
 import httpx
-
 from fastapi import FastAPI
 
-from langgraph.graph import (
-    StateGraph,
-    START,
-    END,
-)
-
+from langgraph.graph import StateGraph, START, END
 from typing_extensions import TypedDict
 
-from common.config import (
-    FLIGHT_AGENT_URL,
-    HOTEL_AGENT_URL,
-)
-
+from common.config import FLIGHT_AGENT_URL, HOTEL_AGENT_URL
 from common.llm import get_llm
 
 from common.models import (
@@ -28,10 +17,7 @@ from common.models import (
 )
 
 
-app = FastAPI(
-    title="Travel Router Agent",
-    version="1.0.0",
-)
+app = FastAPI(title="Travel Router Agent", version="1.0.0")
 
 llm = get_llm()
 
@@ -41,56 +27,44 @@ llm = get_llm()
 # ============================================================
 
 class TravelState(TypedDict, total=False):
-
     message: str
-
     router_decision: RouterDecision
-
     flight_result: FlightAgentResult | None
-
     hotel_result: HotelAgentResult | None
-
     travel_plan: TravelPlan
-
 
 # ============================================================
 # ROUTE REQUEST
 # ============================================================
 
-def route_request(
-    state: TravelState,
-):
-
-    structured_llm = llm.with_structured_output(
-        RouterDecision
-    )
-
+def route_request(state: TravelState):
+    structured_llm = llm.with_structured_output(RouterDecision)
     decision = structured_llm.invoke(
         f"""
-You are the Router Agent for a travel planning system.
+            You are the Router Agent for a travel planning system.
 
-User request:
+            User request:
 
-{state["message"]}
+            {state["message"]}
 
-Determine:
+            Determine:
 
-- destination
-- whether a flight is needed
-- whether a hotel is needed
+            - destination
+            - whether a flight is needed
+            - whether a hotel is needed
 
-For example:
+            For example:
 
-"Plan a 3 day trip to Goa. Find me a flight and hotel."
+            "Plan a 3 day trip to Goa. Find me a flight and hotel."
 
-should produce:
+            should produce:
 
-destination = Goa
-needs_flight = true
-needs_hotel = true
+            destination = Goa
+            needs_flight = true
+            needs_hotel = true
 
-Do not invent information.
-"""
+            Do not invent information.
+        """
     )
 
     return {
@@ -102,13 +76,8 @@ Do not invent information.
 # CALL FLIGHT AGENT
 # ============================================================
 
-async def call_flight_agent(
-    message: str,
-):
-
-    async with httpx.AsyncClient(
-        timeout=60
-    ) as client:
+async def call_flight_agent(message: str):
+    async with httpx.AsyncClient(timeout=60) as client:
 
         response = await client.post(
             f"{FLIGHT_AGENT_URL}/",
@@ -128,14 +97,8 @@ async def call_flight_agent(
 # CALL HOTEL AGENT
 # ============================================================
 
-async def call_hotel_agent(
-    message: str,
-):
-
-    async with httpx.AsyncClient(
-        timeout=60
-    ) as client:
-
+async def call_hotel_agent(message: str):
+    async with httpx.AsyncClient(timeout=60) as client:
         response = await client.post(
             f"{HOTEL_AGENT_URL}/",
             json={
@@ -154,9 +117,7 @@ async def call_hotel_agent(
 # CALL AGENTS
 # ============================================================
 
-async def call_agents(
-    state: TravelState,
-):
+async def call_agents(state: TravelState):
 
     decision = state["router_decision"]
 
@@ -315,46 +276,16 @@ def build_plan(
 # LANGGRAPH
 # ============================================================
 
-builder = StateGraph(
-    TravelState
-)
+builder = StateGraph(TravelState)
 
-builder.add_node(
-    "route_request",
-    route_request,
-)
+builder.add_node("route_request", route_request)
+builder.add_node("call_agents", call_agents)
+builder.add_node("build_plan", build_plan)
 
-builder.add_node(
-    "call_agents",
-    call_agents,
-)
-
-builder.add_node(
-    "build_plan",
-    build_plan,
-)
-
-
-builder.add_edge(
-    START,
-    "route_request",
-)
-
-builder.add_edge(
-    "route_request",
-    "call_agents",
-)
-
-builder.add_edge(
-    "call_agents",
-    "build_plan",
-)
-
-builder.add_edge(
-    "build_plan",
-    END,
-)
-
+builder.add_edge(START, "route_request")
+builder.add_edge("route_request", "call_agents")
+builder.add_edge("call_agents", "build_plan")
+builder.add_edge("build_plan", END)
 
 travel_graph = builder.compile()
 
