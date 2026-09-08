@@ -1,6 +1,5 @@
 This gives you A2A + Router Agent + LangGraph + MCP + tools + Groq + structured Pydantic responses, while still being small enough to understand.
 
-
                          USER
                            |
                            v
@@ -38,9 +37,6 @@ This gives you A2A + Router Agent + LangGraph + MCP + tools + Groq + structured 
                     |             |
                     v             v
               flight_search   hotel_search
-
-
-
 
 Folder Structure
 
@@ -85,16 +81,11 @@ a2a-travel-poc/
 ├── requirements.txt
 └── run_all.py
 
-
 GROQ_API_KEY=your_groq_api_key_here
 GROQ_MODEL=openai/gpt-oss-20b
-
 
 ```
 conda create --prefix ./venv python=3.14 -y
 conda activate ./venv 
 pip install -r requirements.txt
-
 ```
-
-
