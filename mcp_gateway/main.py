@@ -162,15 +162,27 @@ def hotel_price(
 
 
 # ============================================================
-# START MCP SERVER
+# START MCP SERVER - Uncomment for running locally
+# ============================================================
+
+# if __name__ == "__main__":
+#     print("Starting Travel MCP Server...")
+#     print("MCP URL: http://127.0.0.1:9000/mcp")
+
+#     mcp.run(
+#         transport="http",
+#         host="127.0.0.1",
+#         port=9000,
+#     )
+
+
+# ============================================================
+# START MCP SERVER - Uncomment for running in DOcker
 # ============================================================
 
 if __name__ == "__main__":
-    print("Starting Travel MCP Server...")
-    print("MCP URL: http://127.0.0.1:9000/mcp")
-
     mcp.run(
         transport="http",
-        host="127.0.0.1",
+        host="0.0.0.0",
         port=9000,
     )

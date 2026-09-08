@@ -1,0 +1,164 @@
+services:
+
+  # ==========================================================
+  # MCP GATEWAY
+  # ==========================================================
+
+  mcp-gateway:
+    build: .
+    container_name: mcp-gateway
+    command:
+      - python
+      - mcp_gateway/main.py
+    ports:
+      - "9000:9000"
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY}
+    networks:
+      - travel-network
+
+
+  # ==========================================================
+  # FLIGHT AGENT
+  # ==========================================================
+
+  flight-agent:
+    build: .
+    container_name: flight-agent
+    command:
+      - python
+      - -m
+      - uvicorn
+      - agents.flight_agent.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8001"
+
+    ports:
+      - "8001:8001"
+
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      MCP_GATEWAY_URL: http://mcp-gateway:9000/mcp
+
+    depends_on:
+      - mcp-gateway
+
+    networks:
+      - travel-network
+
+
+  # ==========================================================
+  # HOTEL AGENT
+  # ==========================================================
+
+  hotel-agent:
+    build: .
+    container_name: hotel-agent
+
+    command:
+      - python
+      - -m
+      - uvicorn
+      - agents.hotel_agent.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8002"
+
+    ports:
+      - "8002:8002"
+
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      MCP_GATEWAY_URL: http://mcp-gateway:9000/mcp
+
+    depends_on:
+      - mcp-gateway
+
+    networks:
+      - travel-network
+
+
+  # ==========================================================
+  # ROUTER AGENT
+  # ==========================================================
+
+  router-agent:
+    build: .
+    container_name: router-agent
+
+    command:
+      - python
+      - -m
+      - uvicorn
+      - agents.router_agent.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8003"
+
+    ports:
+      - "8003:8003"
+
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY}
+
+      FLIGHT_AGENT_URL: http://flight-agent:8001
+      HOTEL_AGENT_URL: http://hotel-agent:8002
+      MCP_GATEWAY_URL: http://mcp-gateway:9000/mcp
+      ROUTER_AGENT_URL: http://router-agent:8003
+
+    depends_on:
+      - flight-agent
+      - hotel-agent
+      - mcp-gateway
+
+    networks:
+      - travel-network
+
+
+  # ==========================================================
+  # TRAVEL GATEWAY
+  # ==========================================================
+
+  travel-gateway:
+    build: .
+    container_name: travel-gateway
+
+    command:
+      - python
+      - -m
+      - uvicorn
+      - gateway.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+
+    ports:
+      - "8000:8000"
+
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY}
+
+      FLIGHT_AGENT_URL: http://flight-agent:8001
+      HOTEL_AGENT_URL: http://hotel-agent:8002
+      ROUTER_AGENT_URL: http://router-agent:8003
+      MCP_GATEWAY_URL: http://mcp-gateway:9000/mcp
+
+    depends_on:
+      - router-agent
+
+    networks:
+      - travel-network
+
+
+# ============================================================
+# NETWORK
+# ============================================================
+
+networks:
+  travel-network:
+    driver: bridge
