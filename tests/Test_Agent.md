@@ -1,75 +1,303 @@
-# Testing Flow
+# Testing
 
- The testing script is used to verify the complete **Travel Agent → Flight Agent / Hotel Agent → MCP Tools → LLM** flow.
+The testing setup verifies the Travel Agent system from the bottom layer upward.
 
- The test script sends multiple travel scenarios to the Travel Agent and saves the response of each scenario as an HTML report.
+The recommended testing order is:
 
----
+1. Test the MCP Gateway
+2. Check available MCP tools
+3. Test the complete Agent flow
 
- ## Overall Testing Flow
+The overall architecture is:
 
-```
-                    Test Script
-                         |
-                         | POST /plan
-                         v
-                 +----------------+
-                 |  Travel Agent  |
-                 +-------+--------+
-                         |
-             +-----------+-----------+
-             |                       |
-             v                       v
-       Flight Agent            Hotel Agent
-             |                       |
-             v                       v
-      search_flights          search_hotels
-             |                       |
-             v                       v
-        MCP Gateway             MCP Gateway
-             |                       |
-             +-----------+-----------+
-                         |
-                         v
-                  Agent Results
-                         |
-                         v
-                  Travel Plan
-                         |
-                         v
-                  Test Script
-                    /       \
-                   v         v
-              Console      HTML Report
+```text
+                        Testing
+                           |
+            +--------------+--------------+
+            |              |              |
+            v              v              v
+        MCP Test      Check MCP Tools   Agent Tests
+            |              |              |
+            v              v              v
+       MCP Gateway     MCP Gateway    Travel Gateway
+                                         |
+                              +----------+----------+
+                              |                     |
+                              v                     v
+                        Flight Agent           Hotel Agent
+                              |                     |
+                              v                     v
+                        MCP Gateway            MCP Gateway
 ```
 
 ---
 
- # Test Server
+# 1\. Test the MCP Gateway
 
- The testing script uses:
+ The first test should always verify that the MCP Gateway is working correctly.
 
-```
-BASE_URL = "http://127.0.0.1:8000"
-```
-
- This means the test script expects the main Travel Agent to be running on:
+ Run:
 
 ```
-http://127.0.0.1:8000
+python tests/test_mcp.py
 ```
 
- The test script sends requests to:
+ This test connects directly to:
 
 ```
-POST http://127.0.0.1:8000/plan
+http://127.0.0.1:9000/mcp
+```
+
+ using the FastMCP client.
+
+ The test verifies:
+
+- MCP server connection
+- Available MCP tools
+- Flight search
+- Cheapest flight price
+- Hotel search
+- Cheapest hotel price
+
+---
+
+## MCP Test Flow
+
+```
+test_mcp.py
+     |
+     | Connect
+     v
+MCP Gateway
+     |
+     +------------------+
+     |                  |
+     v                  v
+Flight Tools        Hotel Tools
+     |                  |
+     v                  v
+search_flights      search_hotels
+flight_price        hotel_price
 ```
 
 ---
 
- # Test Scenarios
+## MCP Connection
 
- The script defines three scenarios.
+ The test creates a FastMCP client:
+
+```
+async with Client(MCP_URL) as client:
+```
+
+ where:
+
+```
+MCP_URL =
+http://127.0.0.1:9000/mcp
+```
+
+ If the connection succeeds, the test prints:
+
+```
+Connected successfully!
+```
+
+---
+
+# 2\. Check Available MCP Tools
+
+ The project also contains:
+
+```
+tests/check_mcp_tools.py
+```
+
+ Run:
+
+```
+python tests/check_mcp_tools.py
+```
+
+ This is a lightweight MCP discovery test.
+
+ It connects to the MCP Gateway and calls:
+
+```
+tools = await client.list_tools()
+```
+
+ It then prints all available MCP tools.
+
+ Expected tools are:
+
+```
+search_flights
+flight_price
+search_hotels
+hotel_price
+```
+
+ The flow is:
+
+```
+check_mcp_tools.py
+        |
+        v
+MCP Gateway
+        |
+        | list_tools()
+        v
+Available Tools
+        |
+        +--> search_flights
+        +--> flight_price
+        +--> search_hotels
+        +--> hotel_price
+```
+
+ This test answers:
+
+> "Is the MCP Gateway exposing the tools that the agents expect?"
+
+---
+
+# 3\. MCP Tool Testing
+
+ The main MCP test also executes each tool.
+
+## Flight Search
+
+```
+await client.call_tool(
+    "search_flights",
+    {
+        "destination": "Goa",
+    },
+)
+```
+
+ This verifies:
+
+```
+search_flights
+      |
+      v
+Goa flight data
+```
+
+---
+
+## Flight Price
+
+```
+await client.call_tool(
+    "flight_price",
+    {
+        "destination": "Goa",
+    },
+)
+```
+
+ This verifies that the MCP Gateway can calculate the cheapest flight price.
+
+---
+
+## Hotel Search
+
+```
+await client.call_tool(
+    "search_hotels",
+    {
+        "destination": "Goa",
+        "nights": 3,
+    },
+)
+```
+
+ This verifies:
+
+```
+search_hotels
+      |
+      v
+Goa hotel data
+      |
+      v
+3-night hotel prices
+```
+
+---
+
+## Hotel Price
+
+```
+await client.call_tool(
+    "hotel_price",
+    {
+        "destination": "Goa",
+        "nights": 3,
+    },
+)
+```
+
+ This verifies the cheapest total hotel price for the requested number of nights.
+
+---
+
+# 4\. Complete Agent Testing
+
+ After confirming that MCP works, test the complete agent system.
+
+ Run:
+
+```
+python tests/test_agents.py
+```
+
+ The test script sends requests to the Travel Gateway:
+
+```
+http://127.0.0.1:8000/plan
+```
+
+ The complete flow is:
+
+```
+test_agents.py
+      |
+      | POST /plan
+      v
+Travel Gateway
+      |
+      v
+Travel Router Agent
+      |
+      +------------------+
+      |                  |
+      v                  v
+Flight Agent        Hotel Agent
+      |                  |
+      v                  v
+MCP Tools            MCP Tools
+      |                  |
+      +--------+---------+
+               |
+               v
+          Travel Plan
+               |
+               v
+         Travel Gateway
+               |
+               v
+          Test Script
+```
+
+---
+
+# Test Scenarios
+
+ The test script contains three scenarios.
 
 ```
 SCENARIOS = [
@@ -77,11 +305,11 @@ SCENARIOS = [
 ]
 ```
 
- These scenarios test different parts of the system.
+ They are executed sequentially.
 
 ---
 
- ## Scenario 1: Complete Trip Planning
+## Scenario 1: Complete Trip Planning
 
  Request:
 
@@ -90,47 +318,29 @@ Plan a 3 day trip to Goa.
 Find me a flight and hotel.
 ```
 
- Flow:
+ Expected flow:
 
 ```
 Test Script
      |
-     | POST /plan
      v
-Travel Agent
+Travel Gateway
      |
-     +-------------------+
-     |                   |
-     v                   v
-Flight Agent         Hotel Agent
-     |                   |
-     v                   v
-search_flights       search_hotels
-     |                   |
-     v                   v
-Flight Result        Hotel Result
-     |                   |
-     +---------+---------+
-               |
-               v
-          Travel Plan
-               |
-               v
-          Test Script
-```
-
- This is the most complete test because it verifies both:
-
- - Flight Agent
-- Hotel Agent
-
- and their corresponding MCP tools.
-
- Expected tools:
-
-```
-search_flights
-search_hotels
+     v
+Router Agent
+     |
+     +------------+------------+
+     |                         |
+     v                         v
+Flight Agent              Hotel Agent
+     |                         |
+     v                         v
+search_flights            search_hotels
+     |                         |
+     +------------+------------+
+                  |
+                  v
+             Travel Plan
 ```
 
  Expected agents:
@@ -140,9 +350,18 @@ flight-agent
 hotel-agent
 ```
 
+ Expected tools:
+
+```
+search_flights
+search_hotels
+```
+
+ This is the most complete end-to-end test.
+
 ---
 
- # Scenario 2: Flight Search
+# Scenario 2: Flight Search
 
  Request:
 
@@ -150,14 +369,16 @@ hotel-agent
 Find me the best flight to Goa.
 ```
 
- Flow:
+ Expected flow:
 
 ```
 Test Script
      |
-     | POST /plan
      v
-Travel Agent
+Travel Gateway
+     |
+     v
+Router Agent
      |
      v
 Flight Agent
@@ -169,27 +390,7 @@ search_flights
 MCP Gateway
      |
      v
-Flight Data
-     |
-     v
-Flight Agent
-     |
-     v
-LLM Recommendation
-     |
-     v
-Travel Agent
-     |
-     v
-Test Script
-```
-
- This scenario primarily tests the **Flight Agent flow**.
-
- Expected tool:
-
-```
-search_flights
+Flight Result
 ```
 
  Expected agent:
@@ -198,9 +399,15 @@ search_flights
 flight-agent
 ```
 
+ Expected tool:
+
+```
+search_flights
+```
+
 ---
 
- # Scenario 3: Hotel Search
+# Scenario 3: Hotel Search
 
  Request:
 
@@ -209,14 +416,16 @@ Find me a good hotel in Goa
 for a 3 day trip.
 ```
 
- Flow:
+ Expected flow:
 
 ```
 Test Script
      |
-     | POST /plan
      v
-Travel Agent
+Travel Gateway
+     |
+     v
+Router Agent
      |
      v
 Hotel Agent
@@ -228,27 +437,7 @@ search_hotels
 MCP Gateway
      |
      v
-Hotel Data
-     |
-     v
-Hotel Agent
-     |
-     v
-LLM Recommendation
-     |
-     v
-Travel Agent
-     |
-     v
-Test Script
-```
-
- This scenario primarily tests the **Hotel Agent flow**.
-
- Expected tool:
-
-```
-search_hotels
+Hotel Result
 ```
 
  Expected agent:
@@ -257,18 +446,17 @@ search_hotels
 hotel-agent
 ```
 
+ Expected tool:
+
+```
+search_hotels
+```
+
 ---
 
- # How the Test Script Executes
+# Test Execution
 
- The entry point is:
-
-```
-if __name__ == "__main__":
-    main()
-```
-
- When the Python file is executed, `main()` is called.
+ The `main()` function runs all scenarios:
 
 ```
 def main():
@@ -284,512 +472,7 @@ def main():
         )
 ```
 
- The script loops through all three scenarios.
-
-```
-main()
-  |
-  +--> Scenario 1
-  |
-  +--> Scenario 2
-  |
-  +--> Scenario 3
-```
-
- Each scenario is executed **sequentially**.
-
----
-
- # `run_scenario()` Flow
-
- For every scenario, the script calls:
-
-```
-run_scenario(
-    index,
-    scenario,
-)
-```
-
- The first thing it does is print the scenario name.
-
- Example:
-
-```
-========================================
-Scenario 1: Plan a 3 day trip to Goa
-========================================
-```
-
----
-
- # Step 1: Start Latency Timer
-
- The script records the start time:
-
-```
-started = time.perf_counter()
-```
-
- This is used to calculate how long the request takes.
-
----
-
- # Step 2: Send Request to Travel Agent
-
- The main test request is:
-
-```
-response = requests.post(
-    f"{BASE_URL}/plan",
-    json={
-        "message": scenario["message"]
-    },
-    timeout=120,
-)
-```
-
- For Scenario 1, this becomes:
-
-```
-POST http://127.0.0.1:8000/plan
-```
-
- with:
-
-```
-{
-  "message": "Plan a 3 day trip to Goa. Find me a flight and hotel."
-}
-```
-
- The flow is:
-
-```
-Test Script
-     |
-     | HTTP POST
-     v
-127.0.0.1:8000
-     |
-     v
-/plan
-     |
-     v
-Travel Agent
-```
-
----
-
- # Step 3: Measure Latency
-
- After the Travel Agent responds:
-
-```
-latency_ms = int(
-    (time.perf_counter() - started)
-    * 1000
-)
-```
-
- The script calculates the total request duration.
-
- For example:
-
-```
-Latency: 2350 ms
-```
-
- This measures the complete request time from the test script's perspective.
-
----
-
- # Step 4: Validate HTTP Response
-
- The script executes:
-
-```
-response.raise_for_status()
-```
-
- If the server returns a successful HTTP status, execution continues.
-
- For example:
-
-```
-200 OK
-```
-
- If the server returns an error such as:
-
-```
-400
-500
-```
-
- `raise_for_status()` raises an exception and the test stops unless additional error handling is added.
-
----
-
- # Step 5: Convert Response to JSON
-
- The response is converted into a Python dictionary:
-
-```
-payload = response.json()
-```
-
- For example:
-
-```
-{
-  "status": "completed",
-  "travel_plan": {
-    "destination": "goa",
-    "flight": {},
-    "hotel": {}
-  },
-  "agents_called": [
-    "flight-agent",
-    "hotel-agent"
-  ],
-  "tools_called": [
-    "search_flights",
-    "search_hotels"
-  ]
-}
-```
-
- Now the test script can inspect the returned information.
-
----
-
- # Step 6: Print Status
-
- The script prints:
-
-```
-print(
-    f"Status: "
-    f"{payload.get('status', 'completed')}"
-)
-```
-
- Example:
-
-```
-Status: completed
-```
-
- If `status` is missing, it uses:
-
-```
-completed
-```
-
- as the default.
-
----
-
- # Step 7: Print Latency
-
- The script prints:
-
-```
-print(
-    f"Latency: {latency_ms} ms"
-)
-```
-
- Example:
-
-```
-Latency: 2350 ms
-```
-
- This helps measure the performance of the complete agent workflow.
-
----
-
- # Step 8: Print Travel Plan
-
- The script prints:
-
-```
-print("Agent says:")
-```
-
- Then:
-
-```
-print(
-    json.dumps(
-        payload.get("travel_plan"),
-        indent=2,
-        ensure_ascii=False,
-    )
-)
-```
-
- This displays the actual travel plan returned by the Travel Agent.
-
- Example:
-
-```
-Agent says:
-
-{
-  "destination": "goa",
-  "flight": {
-    "airline": "IndiGo",
-    "price": 4500
-  },
-  "hotel": {
-    "name": "Hotel A",
-    "rating": 4.5,
-    "price": 5000
-  }
-}
-```
-
----
-
- # Step 9: Show Agents Called
-
- The script prints:
-
-```
-payload.get(
-    "agents_called",
-    [],
-)
-```
-
- Example:
-
-```
-Agents called: ['flight-agent', 'hotel-agent']
-```
-
- For a flight-only scenario:
-
-```
-Agents called: ['flight-agent']
-```
-
- For a hotel-only scenario:
-
-```
-Agents called: ['hotel-agent']
-```
-
----
-
- # Step 10: Show Tools Called
-
- The script prints:
-
-```
-payload.get(
-    "tools_called",
-    [],
-)
-```
-
- For Scenario 1:
-
-```
-Tools called: ['search_flights', 'search_hotels']
-```
-
- For Scenario 2:
-
-```
-Tools called: ['search_flights']
-```
-
- For Scenario 3:
-
-```
-Tools called: ['search_hotels']
-```
-
- This is useful because it allows you to verify whether the correct MCP tools were actually used.
-
----
-
- # Step 11: Generate HTML Report
-
- After the scenario completes:
-
-```
-report = save_report(
-    scenario_number,
-    payload,
-)
-```
-
- The complete response is passed to `save_report()`.
-
- The function creates the `reports` directory if it doesn't already exist:
-
-```
-os.makedirs(
-    "reports",
-    exist_ok=True,
-)
-```
-
- Then it creates a filename:
-
-```
-filename = (
-    f"reports/scenario"
-    f"{scenario_number}-0.html"
-)
-```
-
- The resulting files are:
-
-```
-reports/
-├── scenario1-0.html
-├── scenario2-0.html
-└── scenario3-0.html
-```
-
----
-
- # Report Generation Flow
-
- The response JSON is formatted:
-
-```
-pretty_json = json.dumps(
-    payload,
-    indent=2,
-    ensure_ascii=False,
-)
-```
-
- Then it is inserted into an HTML page.
-
- The generated report contains:
-
-```
-Travel Agent Report
-        |
-        v
-Complete JSON Response
-```
-
- For example:
-
-```
-<h1>Travel Agent Report</h1>
-
-<pre>
-{
-  "status": "completed",
-  "travel_plan": {...},
-  "agents_called": [...],
-  "tools_called": [...]
-}
-</pre>
-```
-
- Finally, the file is written:
-
-```
-with open(
-    filename,
-    "w",
-    encoding="utf-8",
-) as file:
-
-    file.write(html)
-```
-
----
-
- # Complete Testing Flow
-
- The complete testing architecture is:
-
-```
-                         TEST SCRIPT
-                              |
-                              |
-                       SCENARIOS[]
-                              |
-              +---------------+---------------+
-              |               |               |
-              v               v               v
-          Scenario 1      Scenario 2      Scenario 3
-          Trip Planning   Flight Search   Hotel Search
-              |               |               |
-              +---------------+---------------+
-                              |
-                              v
-                    POST /plan
-                              |
-                              v
-                    +----------------+
-                    |  Travel Agent  |
-                    +-------+--------+
-                            |
-              +-------------+-------------+
-              |                           |
-              v                           v
-        Flight Agent                Hotel Agent
-              |                           |
-              v                           v
-      search_flights               search_hotels
-              |                           |
-              v                           v
-        MCP Gateway                 MCP Gateway
-              |                           |
-              v                           v
-        Flight Data                  Hotel Data
-              |                           |
-              v                           v
-       Flight Agent                 Hotel Agent
-              |                           |
-              v                           v
-            LLM                         LLM
-              |                           |
-              +-------------+-------------+
-                            |
-                            v
-                      Travel Plan
-                            |
-                            v
-                      HTTP Response
-                            |
-                            v
-                       Test Script
-                       /    |    \
-                      /     |     \
-                     v      v      v
-                  Status Latency  Plan
-                            |
-                            v
-                     Agents Called
-                            |
-                            v
-                     Tools Called
-                            |
-                            v
-                      HTML Report
-```
-
----
-
- # Scenario Execution Order
-
- The test does **not** run all scenarios simultaneously.
-
- It runs them one by one:
+ Therefore, execution is sequential:
 
 ```
 main()
@@ -797,20 +480,108 @@ main()
   v
 Scenario 1
   |
-  | complete
   v
 Scenario 2
   |
-  | complete
   v
 Scenario 3
   |
-  | complete
   v
-Program finished
+Testing Complete
 ```
 
- So the final `reports/` directory contains one report for each scenario:
+---
+
+# Latency Measurement
+
+ Each agent request measures its total response time.
+
+ The test starts a timer:
+
+```
+started = time.perf_counter()
+```
+
+ After the response:
+
+```
+latency_ms = int(
+    (time.perf_counter() - started) * 1000
+)
+```
+
+ The result is displayed as:
+
+```
+Latency: 2350 ms
+```
+
+ This measures the complete request from the test client to the Travel Gateway and back.
+
+---
+
+# Response Validation
+
+ The test checks the HTTP response:
+
+```
+response.raise_for_status()
+```
+
+ A successful request should return:
+
+```
+200 OK
+```
+
+ The response is then converted to JSON:
+
+```
+payload = response.json()
+```
+
+---
+
+# What the Test Displays
+
+ For every scenario, the test prints:
+
+```
+Status
+Latency
+Travel Plan
+Agents Called
+Tools Called
+```
+
+ Example:
+
+```
+Status: completed
+Latency: 2350 ms
+
+Agents called:
+['flight-agent', 'hotel-agent']
+
+Tools called:
+['search_flights', 'search_hotels']
+```
+
+ This makes it easy to verify that the correct agents and MCP tools were used.
+
+---
+
+# HTML Reports
+
+ After each scenario, the response is saved as an HTML report.
+
+ Reports are stored in:
+
+```
+reports/
+```
+
+ The files are:
 
 ```
 reports/
@@ -819,74 +590,170 @@ reports/
 └── scenario3-0.html
 ```
 
+ Each report contains the complete JSON response from the Travel Gateway.
+
+ The report includes:
+
+```
+Travel Agent Report
+        |
+        v
+Complete JSON Response
+        |
+        +--> Travel Plan
+        +--> Agents Called
+        +--> Tools Called
+        +--> Latency
+```
+
 ---
 
- # Final Testing Flow Summary
+# Recommended Testing Order
+
+ The recommended order is:
 
 ```
-Test Script starts
-       ↓
-Load 3 scenarios
-       ↓
-Run Scenario 1
-       ↓
-POST /plan
-       ↓
-Travel Agent
-       ↓
-Flight Agent + Hotel Agent
-       ↓
-MCP Tools
-       ↓
-LLM Recommendations
-       ↓
-Travel Plan
-       ↓
-Response received
-       ↓
-Measure latency
-       ↓
-Print result
-       ↓
-Save scenario1-0.html
-       ↓
-Run Scenario 2
-       ↓
-POST /plan
-       ↓
-Flight Agent
-       ↓
-search_flights
-       ↓
-LLM
-       ↓
-Response
-       ↓
-Save scenario2-0.html
-       ↓
-Run Scenario 3
-       ↓
-POST /plan
-       ↓
-Hotel Agent
-       ↓
-search_hotels
-       ↓
-LLM
-       ↓
-Response
-       ↓
-Save scenario3-0.html
-       ↓
-Testing complete
+1. Start MCP Gateway
+        |
+        v
+2. python tests/test_mcp.py
+        |
+        v
+3. python tests/check_mcp_tools.py
+        |
+        v
+4. Start Flight / Hotel / Router / Travel Gateway
+        |
+        v
+5. python tests/test_agents.py
 ```
 
- **In short:**
+ This approach makes debugging easier because the MCP layer is verified before testing the agents.
 
- > The test script acts as the client. It sends three predefined travel requests to the Travel Agent's `/plan` endpoint, measures the response time, displays the returned travel plan and records which agents and MCP tools were used. After each test, it saves the complete response as an HTML report for later inspection.
+---
 
- first test the mcp 
+# Complete Testing Architecture
 
- python tests/test_mcp.py
+```
+                         TESTING
+                            |
+                            v
+                     +-------------+
+                     | MCP Testing |
+                     +------+------+
+                            |
+                +-----------+-----------+
+                |                       |
+                v                       v
+          test_mcp.py         check_mcp_tools.py
+                |                       |
+                +-----------+-----------+
+                            |
+                            v
+                     MCP Gateway
+                      :9000/mcp
+                            |
+                +-----------+-----------+
+                |                       |
+                v                       v
+          Flight Tools             Hotel Tools
+                |                       |
+                v                       v
+       search_flights             search_hotels
+       flight_price               hotel_price
 
+                            |
+                            v
+                    Agent Testing
+                            |
+                            v
+                    test_agents.py
+                            |
+                            v
+                   Travel Gateway
+                       :8000
+                            |
+                            v
+                     POST /plan
+                            |
+                            v
+                  Travel Router Agent
+                       /       \
+                      /         \
+                     v           v
+              Flight Agent   Hotel Agent
+                   |             |
+                   v             v
+                 MCP           MCP
+                   |             |
+                   +------+------+
+                          |
+                          v
+                    Travel Plan
+                          |
+                          v
+                    Test Response
+                          |
+                +---------+---------+
+                |         |         |
+                v         v         v
+             Status    Latency    Reports
+```
 
+---
+
+# Final Testing Flow
+
+```
+MCP Gateway
+     |
+     v
+Test MCP Connection
+     |
+     v
+List MCP Tools
+     |
+     v
+Execute MCP Tools
+     |
+     v
+MCP Testing Passed
+     |
+     v
+Start Agent System
+     |
+     v
+Run test_agents.py
+     |
+     v
+POST /plan
+     |
+     v
+Travel Router
+     |
+     +------------------+
+     |                  |
+     v                  v
+Flight Agent        Hotel Agent
+     |                  |
+     v                  v
+MCP Tools            MCP Tools
+     |                  |
+     +--------+---------+
+              |
+              v
+         Travel Plan
+              |
+              v
+        Test Response
+              |
+              v
+         HTML Reports
+```
+
+## Summary
+
+ The testing system validates the application in two stages:
+
+1. **MCP testing** verifies the MCP Gateway, tool discovery, and individual tool execution.
+2. **Agent testing** verifies the complete Travel Gateway → Router Agent → Flight/Hotel Agent → MCP → Travel Plan flow.

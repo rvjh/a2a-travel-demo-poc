@@ -127,22 +127,22 @@ async def handle_request(request: AgentRequest):
 
     result = await llm_with_structure.ainvoke(
         f"""
-You are the Flight Agent.
+            You are the Flight Agent.
 
-User request:
-{request.message}
+            User request:
+            {request.message}
 
-Available flights:
-{[flight.model_dump() for flight in flights]}
+            Available flights:
+            {[flight.model_dump() for flight in flights]}
 
-Recommend the best flight.
+            Recommend the best flight.
 
-Rules:
-- Do not invent flights.
-- Use only the supplied flight data.
-- Keep the recommendation short.
-- Return destination, flights and recommendation.
-"""
+            Rules:
+            - Do not invent flights.
+            - Use only the supplied flight data.
+            - Keep the recommendation short.
+            - Return destination, flights and recommendation.
+        """
     )
 
     # --------------------------------------------------------

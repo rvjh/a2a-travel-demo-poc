@@ -1,146 +1,152 @@
+Yes. Based strictly on the code you provided, the README should reflect the **actual implementation**, especially the fact that the destination logic currently supports only **Mumbai explicitly, with Goa as the default**.
+
+ Here is a cleaner README version:
+
+ Flight Agent README
+
 # Flight Agent
 
- ## Overview
+## Overview
 
-Flight Agent
-The Flight Agent is an independent HTTP service.
+ The **Flight Agent** is an independent FastAPI HTTP service that searches for flights through an MCP Gateway and uses an LLM to recommend the best available flight.
 
-It communicates with the MCP Gateway.
+ The implementation is located at:
 
+```
 agents/flight_agent/main.py
+```
 
-The flow is now:
+ The Flight Agent has three primary responsibilities:
 
-Router
-   |
-   | HTTP / A2A
-   v
-Flight Agent
-   |
-   | MCP
-   v
-MCP Gateway
-   |
-   v
-search_flights
-   |
-   v
-Flight Agent
-   |
-   v
-LLM
-
-
- The **Flight Agent** is a FastAPI-based AI agent that searches for flights using an MCP (Model Context Protocol) tool and then uses an LLM to recommend the best available flight.
+- Receive flight requests over HTTP.
+- Call the MCP Gateway's `search_flights` tool.
+- Use the LLM to recommend a flight from the returned flight data.
 
  The overall flow is:
 
 ```
-User / Client
-     |
-     | POST /
-     v
-Flight Agent (FastAPI)
-     |
-     | Determine destination
-     v
+Client / Router
+      |
+      | HTTP POST /
+      v
+Flight Agent
+      |
+      | MCP
+      v
 MCP Gateway
-     |
-     | search_flights
-     v
+      |
+      | search_flights
+      v
 Flight Data
-     |
-     v
+      |
+      v
 Flight Models
-     |
-     v
+      |
+      v
 LLM
-     |
-     | Recommend best flight
-     v
+      |
+      | Recommendation
+      v
 FlightAgentResult
-     |
-     v
-User / Client
 ```
 
 ---
 
- ## Architecture
-
- The Flight Agent has three main components:
+## Architecture
 
 ```
 +-----------------------+
-|        Client         |
-|                       |
-| "Find flights to      |
-|        Mumbai"        |
+|    Client / Router    |
 +-----------+-----------+
             |
             | HTTP POST /
             v
 +-----------------------+
-|     Flight Agent     |
-|       FastAPI        |
+|     Flight Agent      |
+|        FastAPI        |
 |                       |
-|  handle_request()    |
+|   handle_request()    |
 +-----------+-----------+
             |
-            | MCP
+            | MCP Client
             v
 +-----------------------+
-|     MCP Gateway      |
+|     MCP Gateway       |
 |                       |
-|   search_flights     |
-+-----------+-----------+
-            |
-            | Flight data
-            v
-+-----------------------+
-|     Flight Agent     |
-|                       |
-| Convert to Flight    |
-| models               |
+|   search_flights      |
 +-----------+-----------+
             |
             | Flight data
             v
 +-----------------------+
-|         LLM           |
+|     Flight Agent      |
 |                       |
-| Recommend best       |
-| flight               |
+|  Flight(**flight)     |
++-----------+-----------+
+            |
+            | Structured data
+            v
++-----------------------+
+|          LLM          |
+|                       |
+| Recommend best flight |
 +-----------+-----------+
             |
             v
 +-----------------------+
-|  FlightAgentResult   |
+|   FlightAgentResult   |
 +-----------------------+
 ```
 
 ---
 
- # API Endpoints
+# API Endpoints
 
- The application exposes two endpoints.
+ The Flight Agent exposes three endpoints:
 
- ## 1\. Agent Card
+- `GET /health`
+- `GET /.well-known/agent-card.json`
+- `POST /`
+
+---
+
+## 1\. Health Check
+
+```
+GET /health
+```
+
+ The health endpoint verifies that the Flight Agent service is running.
+
+ It returns:
+
+```
+{
+  "status": "ok",
+  "agent": "flight-agent",
+  "mcp_gateway": "..."
+}
+```
+
+ The `mcp_gateway` value comes from:
+
+```
+MCP_GATEWAY_URL
+```
+
+ which is configured through the shared configuration.
+
+---
+
+## 2\. Agent Card
 
 ```
 GET /.well-known/agent-card.json
 ```
 
- This endpoint provides information about the Flight Agent.
+ The Agent Card provides information about the Flight Agent for agent discovery.
 
- It tells other agents or clients:
-
- - Agent name
-- Agent description
-- Agent URL
-- Supported skills
-
- Example response:
+ The implementation returns:
 
 ```
 {
@@ -154,21 +160,35 @@ GET /.well-known/agent-card.json
 }
 ```
 
- This endpoint is mainly used for **agent discovery**.
+ The Agent Card is created using the shared:
 
- It does not perform a flight search.
+```
+AgentCard
+```
+
+ model.
+
+ This endpoint does **not** perform a flight search.
 
 ---
 
- # 2\. Flight Request
+## 3\. Flight Request
 
 ```
 POST /
 ```
 
- This is the main endpoint used to process flight requests.
+ This is the main endpoint of the Flight Agent.
 
- Example request:
+ The request uses the:
+
+```
+AgentRequest
+```
+
+ model.
+
+ Example:
 
 ```
 {
@@ -176,19 +196,18 @@ POST /
 }
 ```
 
- The request is converted by FastAPI into an `AgentRequest` object.
+ The request is handled by:
 
 ```
-async def handle_request(
-    request: AgentRequest,
-):
+@app.post("/", response_model=FlightAgentResult)
+async def handle_request(request: AgentRequest):
 ```
 
 ---
 
- # Complete Request Flow
+# Request Flow
 
- ## Step 1: Client sends a request
+## Step 1: Receive the Request
 
  The client sends:
 
@@ -198,107 +217,96 @@ async def handle_request(
 }
 ```
 
- to:
-
-```
-POST /
-```
-
- The request reaches:
+ The request is received by:
 
 ```
 handle_request()
 ```
 
+ FastAPI validates the request using:
+
+```
+AgentRequest
+```
+
 ---
 
- ## Step 2: Determine the destination
+## Step 2: Determine the Destination
 
- The agent initially sets:
+ The current implementation uses simple string matching.
+
+ The destination initially defaults to:
 
 ```
 destination = "goa"
 ```
 
- So Goa is the default destination.
-
- Then it checks:
+ The request message is converted to lowercase:
 
 ```
-if "mumbai" in request.message.lower():
+message = request.message.lower()
+```
+
+ The code then checks for Mumbai:
+
+```
+if "mumbai" in message:
     destination = "mumbai"
 ```
 
- For this request:
+ Therefore, the current behavior is:
 
 ```
-"Find me a flight to Mumbai"
-```
-
- the check becomes:
-
-```
-"mumbai" in "find me a flight to mumbai"
-```
-
- which is `True`.
-
- Therefore:
-
-```
+Message contains "mumbai"
+        |
+        v
 destination = "mumbai"
 ```
 
- The current implementation supports:
+ Otherwise:
 
 ```
-Mumbai → mumbai
-Everything else → goa
+Message does not contain "mumbai"
+        |
+        v
+destination = "goa"
 ```
 
- For example:
+### Current destination behavior
 
-```
-"Find flights to Mumbai"
-        ↓
-destination = mumbai
-```
+| User request                | Destination |
+| --------------------------- | ----------- |
+| `Find a flight to Mumbai` | `mumbai`  |
+| `I need to visit Mumbai`  | `mumbai`  |
+| `Find flights to Goa`     | `goa`     |
+| `Find flights to Delhi`   | `goa`     |
+| `Find flights to Chennai` | `goa`     |
 
- and:
-
-```
-"Find flights to Goa"
-        ↓
-destination = goa
-```
+ This is important because the current implementation does **not** dynamically extract arbitrary destinations.
 
 ---
 
- # Step 3: Call the MCP Flight Tool
+# Step 3: Call the MCP Gateway
 
- After determining the destination, the agent calls:
-
-```
-raw_flights = await call_mcp_flight_tool(
-    destination
-)
-```
-
- The function:
+ After determining the destination, the Flight Agent calls:
 
 ```
-async def call_mcp_flight_tool(
-    destination: str,
-) -> list[dict]:
+raw_flights = await call_mcp_flight_tool(destination)
 ```
 
- creates an MCP client:
+ The MCP helper is:
+
+```
+async def call_mcp_flight_tool(destination: str) -> list[dict]:
+```
+
+ It creates an MCP client using:
 
 ```
 async with Client(MCP_GATEWAY_URL) as client:
 ```
 
- The client connects to the configured:
+ The MCP Gateway URL comes from:
 
 ```
 MCP_GATEWAY_URL
@@ -306,9 +314,9 @@ MCP_GATEWAY_URL
 
 ---
 
- # Step 4: Execute `search_flights`
+# Step 4: Call `search_flights`
 
- The agent calls the MCP tool:
+ The MCP client calls:
 
 ```
 result = await client.call_tool(
@@ -319,7 +327,13 @@ result = await client.call_tool(
 )
 ```
 
- For Mumbai, the MCP request is effectively:
+ The tool name must match the MCP Gateway tool exactly:
+
+```
+search_flights
+```
+
+ For a Mumbai request, the MCP call is:
 
 ```
 {
@@ -327,12 +341,12 @@ result = await client.call_tool(
 }
 ```
 
- The flow is:
+ The request flow is:
 
 ```
 Flight Agent
      |
-     | call_tool()
+     | MCP call
      v
 MCP Gateway
      |
@@ -346,34 +360,38 @@ Flight Data
 
 ---
 
- # Step 5: Receive Flight Data
+# Step 5: Receive MCP Data
 
- The MCP tool returns the result.
-
- The agent gets the data using:
+ The MCP result is returned using:
 
 ```
 return result.data
+```
+
+ The returned value is expected to be a list of dictionaries:
+
+```
+list[dict]
 ```
 
  For example:
 
 ```
 [
-    {
-        "airline": "IndiGo",
-        "flight_number": "6E123",
-        "price": 4500
-    },
-    {
-        "airline": "Air India",
-        "flight_number": "AI456",
-        "price": 5200
-    }
+  {
+    "airline": "IndiGo",
+    "flight_number": "6E123",
+    "price": 4500
+  },
+  {
+    "airline": "Air India",
+    "flight_number": "AI456",
+    "price": 5200
+  }
 ]
 ```
 
- This raw data is stored in:
+ This data is stored in:
 
 ```
 raw_flights
@@ -381,15 +399,27 @@ raw_flights
 
 ---
 
- # Step 6: Convert Data to Flight Models
+# Step 6: Convert MCP Data to Flight Models
 
- The raw dictionaries are converted into `Flight` objects:
+ The raw dictionaries are converted into `Flight` models:
 
 ```
 flights = [
     Flight(**flight)
     for flight in raw_flights
 ]
+```
+
+ Conceptually:
+
+```
+MCP dictionary
+      |
+      v
+Flight(**flight)
+      |
+      v
+Flight model
 ```
 
  For example:
@@ -412,42 +442,25 @@ Flight(
 )
 ```
 
- The purpose of this step is to convert unstructured dictionary data into validated application models.
-
- The flow becomes:
-
-```
-Raw MCP Data
-     |
-     v
-Flight(**flight)
-     |
-     v
-Flight Object
-```
+ The `Flight` model provides structured and validated flight data for the rest of the application.
 
 ---
 
- # Step 7: Check Whether Flights Were Found
+# Step 7: Handle No Flights
 
- The agent checks:
+ The agent checks whether any flights were returned:
 
 ```
 if not flights:
 ```
 
- If the list is empty:
-
-```
-flights = []
-```
-
- the LLM is not called.
+ If there are no flights, the LLM is **not called**.
 
  Instead, the agent immediately returns:
 
 ```
 FlightAgentResult(
+    agent="flight-agent",
     destination=destination,
     flights=[],
     recommendation="No flights found.",
@@ -455,10 +468,11 @@ FlightAgentResult(
 )
 ```
 
- The response will be similar to:
+ Example response:
 
 ```
 {
+  "agent": "flight-agent",
   "destination": "mumbai",
   "flights": [],
   "recommendation": "No flights found.",
@@ -470,9 +484,9 @@ FlightAgentResult(
 
 ---
 
- # Step 8: Prepare the LLM
+# Step 8: Create a Structured LLM
 
- If flights are available, the agent creates a structured LLM:
+ When flights are available, the agent creates a structured-output LLM:
 
 ```
 llm_with_structure = llm.with_structured_output(
@@ -480,61 +494,45 @@ llm_with_structure = llm.with_structured_output(
 )
 ```
 
- This tells the LLM that its response should follow the structure defined by:
+ The LLM is configured through:
+
+```
+llm = get_llm()
+```
+
+ from:
+
+```
+common.llm
+```
+
+ The structured output is based on:
 
 ```
 FlightAgentResult
 ```
 
- Instead of returning arbitrary text, the LLM should produce structured flight-agent output.
+ This means the LLM is expected to return data matching the application's result model rather than arbitrary text.
 
 ---
 
- # Step 9: Send Flight Data to the LLM
+# Step 9: Send Flight Data to the LLM
 
- The agent sends two important pieces of information to the LLM:
+ The agent sends the following information to the LLM:
 
- ### User request
+- The original user request.
+- The available flights.
 
-```
-request.message
-```
-
- Example:
-
-```
-Find me a flight to Mumbai
-```
-
- ### Available flights
-
-```
-[flight.model_dump() for flight in flights]
-```
-
- This converts the `Flight` objects back into dictionaries for inclusion in the LLM prompt.
-
- The LLM receives information conceptually like:
+ The prompt contains:
 
 ```
 You are the Flight Agent.
 
 User request:
-Find me a flight to Mumbai
+{request.message}
 
 Available flights:
-[
-    {
-        "airline": "IndiGo",
-        "flight_number": "6E123",
-        "price": 4500
-    },
-    {
-        "airline": "Air India",
-        "flight_number": "AI456",
-        "price": 5200
-    }
-]
+{available flights}
 
 Recommend the best flight.
 
@@ -545,73 +543,103 @@ Rules:
 - Return destination, flights and recommendation.
 ```
 
+ The available `Flight` models are converted back into dictionaries using:
+
+```
+flight.model_dump()
+```
+
+ The LLM therefore receives the actual flight data returned by the MCP tool.
+
 ---
 
- # Step 10: LLM Recommends a Flight
+# Step 10: LLM Recommendation
 
- The LLM analyzes the supplied flights.
+ The LLM's responsibility is to **recommend** a flight.
 
- For example:
+ It does not search for flights.
 
-```
-IndiGo
-Flight: 6E123
-Price: ₹4500
-
-Air India
-Flight: AI456
-Price: ₹5200
-```
-
- The LLM may determine that:
-
-```
-IndiGo 6E123 is the best option because it has the lower price.
-```
-
- The important point is that the LLM is **not searching for flights**.
-
- The MCP tool searches for flights.
-
- The LLM only analyzes the flight data supplied by the MCP tool.
+ The MCP tool performs the search:
 
 ```
 MCP
  |
- | Find flights
+ | Search
  v
 Flight Data
+```
+
+ The LLM analyzes the returned data:
+
+```
+Flight Data
  |
- | Give data to LLM
+ | Analyze
  v
 LLM
  |
  | Recommend
  v
-Final Result
+Best Flight
 ```
+
+ For example, if the MCP Gateway returns:
+
+```
+IndiGo 6E123  - ₹4500
+Air India AI456 - ₹5200
+```
+
+ the LLM may recommend the IndiGo flight based on the supplied information.
+
+ The LLM must follow the rule:
+
+```
+Do not invent flights.
+```
+
+ Therefore, recommendations should only be based on the flight data returned by `search_flights`.
 
 ---
 
- # Step 11: Add Agent Information
+# Step 11: Add Agent and Tool Metadata
 
- After the LLM returns the structured result:
+ After the LLM returns the structured result, the agent adds its own metadata:
 
 ```
 result.agent = "flight-agent"
 ```
 
- sets the agent name.
-
- Then:
+ and:
 
 ```
 result.tools_called = ["search_flights"]
 ```
 
- records which MCP tool was used.
+ This records:
 
- The final object is conceptually:
+- Which agent produced the response.
+- Which MCP tool was used.
+
+---
+
+# Step 12: Return the Result
+
+ The final result is returned:
+
+```
+return result
+```
+
+ Because the endpoint declares:
+
+```
+response_model=FlightAgentResult
+```
+
+ FastAPI returns the structured result as JSON.
+
+ The complete response conceptually looks like:
 
 ```
 {
@@ -638,115 +666,81 @@ result.tools_called = ["search_flights"]
 
 ---
 
- # Step 12: Return the Response
+# Complete End-to-End Flow
 
- Finally:
-
-```
-return result
-```
-
- returns the `FlightAgentResult` to the client.
-
- FastAPI automatically serializes the Pydantic model into JSON.
-
-```
-FlightAgentResult
-       |
-       v
-FastAPI serialization
-       |
-       v
-JSON response
-       |
-       v
-Client
-```
-
----
-
- # End-to-End Example
-
- Suppose the user sends:
+ For a request such as:
 
 ```
 {
-  "message": "I need a flight to Mumbai"
+  "message": "Find me a flight to Mumbai"
 }
 ```
 
- The complete execution is:
+ the execution is:
 
 ```
 1. Client
    |
    | POST /
-   | message = "I need a flight to Mumbai"
    v
 2. FastAPI
    |
    v
-3. handle_request()
-   |
-   | destination = "goa"
-   |
-   | Check message for "mumbai"
+3. AgentRequest
    |
    v
-4. destination = "mumbai"
+4. handle_request()
    |
    v
-5. call_mcp_flight_tool("mumbai")
+5. Determine destination
+   |
+   | "mumbai" detected
+   v
+6. destination = "mumbai"
    |
    v
-6. MCP Client
-   |
-   | call_tool(
-   |   "search_flights",
-   |   {"destination": "mumbai"}
-   | )
-   v
-7. MCP Gateway
+7. call_mcp_flight_tool("mumbai")
    |
    v
-8. search_flights
+8. MCP Client
+   |
+   | call_tool("search_flights", ...)
+   v
+9. MCP Gateway
    |
    v
-9. Raw flight data
-   |
-   v
-10. Flight(**flight)
+10. search_flights
     |
     v
-11. List[Flight]
+11. Raw flight data
     |
     v
-12. Check flights
+12. Flight models
+    |
+    v
+13. Check flights
     |
     +---- No flights
     |       |
     |       v
-    |   Return "No flights found."
+    |   Return result
     |
     +---- Flights found
             |
             v
-13. Create structured LLM
+14. Structured LLM
             |
             v
-14. Send user request + flights
+15. User request + flight data
             |
             v
-15. LLM recommends best flight
+16. LLM recommendation
             |
             v
-16. FlightAgentResult
+17. FlightAgentResult
             |
             v
-17. Set agent = "flight-agent"
-            |
-            v
-18. Set tools_called = ["search_flights"]
+18. Add agent/tool metadata
             |
             v
 19. Return JSON
@@ -757,124 +751,118 @@ Client
 
 ---
 
- # Responsibility of Each Component
+# Component Responsibilities
 
- | Component | Responsibility |
-| --- | --- |
-| FastAPI | Exposes HTTP endpoints |
-| `AgentRequest` | Validates incoming request |
-| `AgentCard` | Describes the Flight Agent |
-| `MCP Client` | Connects to the MCP Gateway |
-| `search_flights` | Retrieves flight information |
-| `Flight` | Represents a flight |
-| `LLM` | Recommends the best supplied flight |
-| `FlightAgentResult` | Defines the final response structure |
-| `MCP_GATEWAY_URL` | Configures the MCP Gateway location |
+| Component             | Responsibility                           |
+| --------------------- | ---------------------------------------- |
+| FastAPI               | Exposes the Flight Agent HTTP API        |
+| `AgentRequest`      | Validates incoming requests              |
+| `AgentCard`         | Describes the Flight Agent               |
+| `MCP Client`        | Connects the agent to the MCP Gateway    |
+| `search_flights`    | Retrieves flight data                    |
+| `Flight`            | Represents structured flight information |
+| `LLM`               | Recommends a flight from supplied data   |
+| `FlightAgentResult` | Defines the structured agent response    |
+| `MCP_GATEWAY_URL`   | Specifies the MCP Gateway location       |
+| `get_llm()`         | Creates the configured LLM               |
 
 ---
 
- # Important Design Point
+# Key Design Principle
 
- The application follows an **agent orchestration pattern**:
+ The Flight Agent separates **tool execution** from **LLM reasoning**.
 
-```
-                  Flight Agent
-                       |
-          +------------+------------+
-          |                         |
-          v                         v
-     MCP Tool                     LLM
-          |                         |
-          |                         |
-   Get actual data          Analyze data
-          |                         |
-          +------------+------------+
-                       |
-                       v
-                Final Response
-```
-
- The responsibilities are separated:
-
- ### MCP = Tool execution
+### MCP handles data retrieval
 
 ```
-"Find me available flights"
+search_flights
+      |
+      v
+Actual flight data
 ```
 
- is handled by:
+### LLM handles recommendation
+
+```
+Flight data
+      |
+      v
+LLM
+      |
+      v
+Recommendation
+```
+
+### FastAPI handles orchestration
+
+```
+HTTP request
+      |
+      v
+Destination
+      |
+      v
+MCP
+      |
+      v
+Flight models
+      |
+      v
+LLM
+      |
+      v
+Final response
+```
+
+ This keeps the responsibilities of each component separate.
+
+---
+
+# Current Implementation Limitation
+
+ Destination detection is currently hard-coded:
+
+```
+destination = "goa"
+
+if "mumbai" in message:
+    destination = "mumbai"
+```
+
+ As a result, the current implementation effectively supports:
+
+```
+Mumbai → mumbai
+Everything else → goa
+```
+
+ For example:
+
+```
+"Find a flight to Mumbai"
+        ↓
+mumbai
+```
+
+ while:
+
+```
+"Find a flight to Delhi"
+        ↓
+goa
+```
+
+ A future implementation could replace this logic with dynamic destination extraction so that arbitrary destinations can be passed to:
 
 ```
 search_flights
 ```
 
- ### LLM = Reasoning/recommendation
-
-```
-"Which of these flights is the best?"
-```
-
- is handled by:
-
-```
-LLM
-```
-
- ### FastAPI = Agent interface/orchestration
-
-```
-"Receive request → call tools → call LLM → return result"
-```
-
 ---
 
- # Current Limitation
+# Summary
 
- The destination detection is currently hard-coded:
-
-```
-destination = "goa"
-
-if "mumbai" in request.message.lower():
-    destination = "mumbai"
-```
-
- Therefore:
-
-```
-"Flight to Mumbai" → Mumbai
-"Flight to Goa"    → Goa
-"Flight to Delhi"  → Goa ❌
-"Flight to Chennai"→ Goa ❌
-"Flight to Dubai"  → Goa ❌
-```
-
- A better architecture would be to let the LLM or a dedicated parser extract the destination:
-
-```
-User message
-     |
-     v
-Destination Extraction
-     |
-     +---- Mumbai
-     +---- Goa
-     +---- Delhi
-     +---- Chennai
-     +---- Bangalore
-     +---- etc.
-     |
-     v
-MCP search_flights
-```
-
- That would make the Flight Agent much more scalable.
-
----
-
- # Summary
-
- The Flight Agent's complete flow is:
+ The Flight Agent follows this pattern:
 
 ```
 HTTP Request
@@ -883,7 +871,7 @@ FastAPI
      ↓
 AgentRequest
      ↓
-Extract destination
+Determine Destination
      ↓
 MCP Client
      ↓
@@ -891,30 +879,19 @@ MCP Gateway
      ↓
 search_flights
      ↓
-Raw flight data
+Flight Data
      ↓
-Flight Pydantic models
+Flight Models
      ↓
-Check whether flights exist
+Check Results
      ↓
-    ┌───────────────┐
-    │               │
- No flights     Flights found
-    │               │
-    ↓               ↓
-Return "No       Structured LLM
-flights"             ↓
-                  Analyze flights
-                     ↓
-                 Recommendation
-                     ↓
-              FlightAgentResult
-                     ↓
-                Add agent info
-                     ↓
-                 JSON response
-                     ↓
-                   Client
+Structured LLM
+     ↓
+Flight Recommendation
+     ↓
+FlightAgentResult
+     ↓
+HTTP JSON Response
 ```
 
- **In short: MCP gets the flight data; the LLM recommends a flight; FastAPI coordinates the entire process.**
+ **MCP retrieves the flight data, the LLM recommends a flight, and the Flight Agent orchestrates the complete flow.**

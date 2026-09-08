@@ -1,324 +1,291 @@
- # Travel Router Agent
+# Travel Router Agent
 
- ## Overview
+## Overview
 
-Router Agent with LangGraph
+ The **Travel Router Agent** is the main orchestration agent in the travel planning system.
 
-This is the most important part.
+ It is built with **FastAPI** and **LangGraph** and coordinates the Flight Agent and Hotel Agent through HTTP calls.
 
-The Router Agent is itself an agent.
+ The Router Agent does not directly access flight or hotel MCP tools. Instead, it:
 
-It has a LangGraph workflow:
+1. Receives a user's travel request.
+2. Uses an LLM to determine the destination.
+3. Determines whether a flight is needed.
+4. Determines whether a hotel is needed.
+5. Calls the required Flight Agent and Hotel Agent.
+6. Calls both agents concurrently when both are required.
+7. Collects their results.
+8. Selects a flight and hotel for the final plan.
+9. Calculates the estimated trip cost.
+10. Builds a `TravelPlan`.
+11. Returns the complete result to the client.
 
+ The implementation is located at:
+
+```
+agents/router_agent/main.py
+```
+
+---
+
+## Architecture
+
+ The Travel Router is the top-level agent in the travel system.
+
+```
+                         USER / CLIENT
+                               |
+                               | POST /
+                               v
+                  +-------------------------+
+                  |   Travel Router Agent   |
+                  |        FastAPI          |
+                  +------------+------------+
+                               |
+                               v
+                       route_request
+                               |
+                               | LLM
+                               v
+                     RouterDecision
+                               |
+                               v
+                         call_agents
+                        /           \
+                       /             \
+                      v               v
+              Flight Agent      Hotel Agent
+                   |                  |
+                  HTTP               HTTP
+                   |                  |
+                   v                  v
+              Flight Result      Hotel Result
+                       \             /
+                        \           /
+                         +---------+
+                              |
+                              v
+                         build_plan
+                              |
+                              v
+                         TravelPlan
+                              |
+                              v
+                            USER
+```
+
+ The important distinction is that the Router Agent delegates work to specialized agents rather than directly calling MCP tools.
+
+```
+                    Travel Router Agent
+                            |
+                    HTTP Agent Calls
+                       /          \
+                      v            v
+               Flight Agent   Hotel Agent
+                    |               |
+                   MCP             MCP
+                    |               |
+                    v               v
+             Flight Tools     Hotel Tools
+```
+
+---
+
+# Main Technologies
+
+- **FastAPI** — exposes the Router Agent HTTP API.
+- **LangGraph** — defines and executes the orchestration workflow.
+- **LLM** — interprets the user's travel request and produces a structured `RouterDecision`.
+- **HTTPX** — communicates with the Flight Agent and Hotel Agent.
+- **Pydantic models** — validate agent responses and define structured data.
+- **Flight Agent** — handles flight-specific search and recommendation.
+- **Hotel Agent** — handles hotel-specific search and recommendation.
+
+---
+
+# Application Startup
+
+ The application is initialized with:
+
+```
+app = FastAPI(
+    title="Travel Router Agent",
+    version="1.0.0",
+)
+
+llm = get_llm()
+```
+
+ This creates the FastAPI application and initializes the LLM.
+
+ The LLM is used by the `route_request` node to understand the user's request.
+
+---
+
+# TravelState
+
+ LangGraph uses `TravelState` as the shared state between workflow nodes.
+
+```
+class TravelState(TypedDict, total=False):
+
+    message: str
+
+    router_decision: RouterDecision
+
+    flight_result: FlightAgentResult | None
+
+    hotel_result: HotelAgentResult | None
+
+    travel_plan: TravelPlan
+```
+
+ The state contains:
+
+| Field               | Purpose                             |
+| ------------------- | ----------------------------------- |
+| `message`         | Original user request               |
+| `router_decision` | LLM-generated routing decision      |
+| `flight_result`   | Result returned by the Flight Agent |
+| `hotel_result`    | Result returned by the Hotel Agent  |
+| `travel_plan`     | Final combined travel plan          |
+
+ The state gradually becomes:
+
+```
+Initial State
+    |
+    +-- message
+    |
+    v
+After route_request
+    |
+    +-- message
+    +-- router_decision
+    |
+    v
+After call_agents
+    |
+    +-- message
+    +-- router_decision
+    +-- flight_result
+    +-- hotel_result
+    |
+    v
+After build_plan
+    |
+    +-- message
+    +-- router_decision
+    +-- flight_result
+    +-- hotel_result
+    +-- travel_plan
+```
+
+---
+
+# LangGraph Workflow
+
+ The actual graph contains **three nodes**:
+
+```
 START
   |
   v
 route_request
   |
-  +----------+
-  |          |
-  v          v
-flight     hotel
-  |          |
-  +----+-----+
-       |
-       v
-  build_plan
-       |
-       v
-      END
-
-
-The router does not directly access the MCP tools.
-
-Instead
-
-Router
+  v
+call_agents
   |
-  +--> Flight Agent
+  v
+build_plan
   |
-  +--> Hotel Agent
-
-
-This gives us genuine agent-to-agent delegation
-
-agents/router_agent/main.py
-
-
- The **Travel Router Agent** is the main orchestrator in the travel planning system.
-
- Unlike the Flight Agent and Hotel Agent, this agent does not directly search for flights or hotels.
-
- Instead, it:
-
- 1. Receives the user's travel request.
-2. Uses an LLM to understand what the user needs.
-3. Decides whether a flight and/or hotel is required.
-4. Calls the Flight Agent and Hotel Agent through HTTP/A2A-style communication.
-5. Collects their results.
-6. Selects a flight and hotel.
-7. Calculates the estimated total cost.
-8. Builds a final `TravelPlan`.
-9. Returns the complete travel plan to the client.
-
- The overall architecture is:
-
-```
-                         USER
-                           |
-                           | POST /
-                           v
-              +-------------------------+
-              |   Travel Router Agent   |
-              |        FastAPI          |
-              +------------+------------+
-                           |
-                           v
-                    route_request
-                           |
-                           | LLM
-                           v
-                  RouterDecision
-                           |
-                 +---------+---------+
-                 |                   |
-                 v                   v
-           Flight Node          Hotel Node
-                 |                   |
-                 | HTTP              | HTTP
-                 v                   v
-          Flight Agent          Hotel Agent
-                 |                   |
-                 |                   |
-                 v                   v
-          Flight Results        Hotel Results
-                 |                   |
-                 +---------+---------+
-                           |
-                           v
-                     build_plan
-                           |
-                           v
-                    TravelPlan
-                           |
-                           v
-                         USER
+  v
+END
 ```
 
----
-
- # Architecture
-
- The Travel Router sits above the Flight and Hotel Agents.
+ The graph is created with:
 
 ```
-                         +----------------+
-                         |      User      |
-                         +-------+--------+
-                                 |
-                                 | Travel request
-                                 v
-                    +-------------------------+
-                    |   Travel Router Agent   |
-                    |                         |
-                    |       FastAPI           |
-                    +------------+------------+
-                                 |
-                                 v
-                       +----------------+
-                       |   LLM Router   |
-                       |                |
-                       |  destination   |
-                       |  flight?       |
-                       |  hotel?        |
-                       +-------+--------+
-                               |
-                    +----------+----------+
-                    |                     |
-                    v                     v
-             +-------------+       +-------------+
-             | Flight Node |       | Hotel Node  |
-             +------+------+       +------+------+
-                    |                     |
-                    | HTTP                | HTTP
-                    v                     v
-             +-------------+       +-------------+
-             | Flight      |       | Hotel       |
-             | Agent       |       | Agent       |
-             +------+------+       +------+------+
-                    |                     |
-                    v                     v
-             Flight Result          Hotel Result
-                    |                     |
-                    +----------+----------+
-                               |
-                               v
-                      +----------------+
-                      |  Build Plan    |
-                      |                |
-                      | Select flight  |
-                      | Select hotel   |
-                      | Calculate cost |
-                      +-------+--------+
-                              |
-                              v
-                       TravelPlan
-                              |
-                              v
-                             User
+builder = StateGraph(
+    TravelState
+)
+
+builder.add_node(
+    "route_request",
+    route_request,
+)
+
+builder.add_node(
+    "call_agents",
+    call_agents,
+)
+
+builder.add_node(
+    "build_plan",
+    build_plan,
+)
 ```
 
----
-
- # Main Technologies
-
- The application uses:
-
- - **FastAPI** — exposes the Travel Router HTTP API.
-- **LangGraph** — controls the agent workflow.
-- **LLM** — determines what the user needs.
-- **HTTPX** — communicates with Flight and Hotel Agents.
-- **Pydantic** — validates structured data.
-- **Flight Agent** — searches/recommends flights.
-- **Hotel Agent** — searches/recommends hotels.
-
----
-
- # Application Startup
-
- The application starts with:
+ The edges are:
 
 ```
-app = FastAPI(title="Travel Router Agent")
+builder.add_edge(
+    START,
+    "route_request",
+)
 
-llm = get_llm()
+builder.add_edge(
+    "route_request",
+    "call_agents",
+)
+
+builder.add_edge(
+    "call_agents",
+    "build_plan",
+)
+
+builder.add_edge(
+    "build_plan",
+    END,
+)
 ```
 
- The first line creates the FastAPI application.
-
- The second line initializes the LLM:
+ Therefore, the actual LangGraph execution is:
 
 ```
-llm = get_llm()
-```
-
- The LLM is later used by the router to understand the user's request.
-
- The application therefore has:
-
-```
-FastAPI
-   |
-   +── POST /
-   |
-   +── LangGraph
-          |
-          +── Router
-          +── Flight Agent
-          +── Hotel Agent
-          +── Build Plan
-```
-
----
-
- # LangGraph State
-
- The central state of the workflow is:
-
-```
-class TravelState(TypedDict, total=False):
-    message: str
-    router_decision: RouterDecision
-    flight_result: FlightAgentResult | None
-    hotel_result: HotelAgentResult | None
-    travel_plan: TravelPlan
-```
-
- This state is shared between the different LangGraph nodes.
-
- Think of it as a shared object moving through the graph.
-
- Initially:
-
-```
-TravelState
-    |
-    +── message
-```
-
- After routing:
-
-```
-TravelState
-    |
-    +── message
-    +── router_decision
-```
-
- After Flight Agent:
-
-```
-TravelState
-    |
-    +── message
-    +── router_decision
-    +── flight_result
-```
-
- After Hotel Agent:
-
-```
-TravelState
-    |
-    +── message
-    +── router_decision
-    +── flight_result
-    +── hotel_result
-```
-
- Finally:
-
-```
-TravelState
-    |
-    +── message
-    +── router_decision
-    +── flight_result
-    +── hotel_result
-    +── travel_plan
-```
-
----
-
- # LangGraph Nodes
-
- There are four nodes in the graph:
-
-```
+START
+  |
+  v
 route_request
-      |
-      +---- flight_agent
-      |
-      +---- hotel_agent
-              |
-              v
-          build_plan
+  |
+  v
+call_agents
+  |
+  v
+build_plan
+  |
+  v
+END
 ```
 
- The nodes are:
+### Important
 
- | Node | Responsibility |
-| --- | --- |
-| `route_request` | Understand the user request |
-| `flight_agent` | Call Flight Agent if required |
-| `hotel_agent` | Call Hotel Agent if required |
-| `build_plan` | Select options and build final plan |
+ The Flight Agent and Hotel Agent are **not separate LangGraph nodes in the current implementation**.
+
+ Instead, both are called from the single:
+
+```
+call_agents()
+```
+
+ node.
 
 ---
 
- # Step 1: User Sends Request
+# Step 1: Receive User Request
 
- The API endpoint is:
+ The Router exposes:
 
 ```
 POST /
@@ -328,34 +295,26 @@ POST /
 
 ```
 @app.post("/")
-async def travel(request: AgentRequest):
+async def travel(
+    request: AgentRequest,
+):
 ```
 
- A user might send:
+ For example, the client can send:
 
 ```
 {
-  "message": "Plan a 3 day trip to Goa. Find a flight and hotel."
+  "message": "Plan a 3 day trip to Goa. Find me a flight and hotel."
 }
 ```
 
- FastAPI converts this into:
+ FastAPI validates the request using:
 
 ```
 AgentRequest
 ```
 
- and passes it to:
-
-```
-travel()
-```
-
----
-
- # Step 2: Start the LangGraph
-
- Inside the API function:
+ The user's message is then passed into LangGraph:
 
 ```
 result = await travel_graph.ainvoke(
@@ -365,37 +324,27 @@ result = await travel_graph.ainvoke(
 )
 ```
 
- The graph starts with:
-
-```
-message
-   |
-   v
-START
-   |
-   v
-route_request
-```
-
- Initially the graph state is:
+ The initial state is therefore:
 
 ```
 {
-    "message": "Plan a 3 day trip to Goa. Find a flight and hotel."
+    "message": "Plan a 3 day trip to Goa. Find me a flight and hotel."
 }
 ```
 
 ---
 
- # Step 3: Router Node
+# Step 2: Route the Request
 
- The first LangGraph node is:
+ The first node is:
 
 ```
-def route_request(state: TravelState):
+def route_request(
+    state: TravelState,
+):
 ```
 
- This node determines what the user wants.
+ This node is responsible for understanding what the user needs.
 
  It creates a structured LLM:
 
@@ -405,42 +354,20 @@ structured_llm = llm.with_structured_output(
 )
 ```
 
- This means the LLM must return a structure matching:
+ The LLM is instructed to determine:
 
-```
-RouterDecision
-```
-
- The LLM is given the user's request.
+- destination
+- whether a flight is needed
+- whether a hotel is needed
 
  For example:
 
 ```
-You are the Router Agent for a travel planning system.
-
-User request:
-Plan a 3 day trip to Goa. Find a flight and hotel.
-
-Determine:
-
-1. destination
-2. whether a flight is required
-3. whether a hotel is required
+Plan a 3 day trip to Goa.
+Find me a flight and hotel.
 ```
 
----
-
- # Step 4: LLM Creates Router Decision
-
- The LLM analyzes the request.
-
- For:
-
-```
-Plan a 3 day trip to Goa. Find a flight and hotel.
-```
-
- the expected result is approximately:
+ The expected structured decision is approximately:
 
 ```
 {
@@ -450,13 +377,7 @@ Plan a 3 day trip to Goa. Find a flight and hotel.
 }
 ```
 
- This becomes a:
-
-```
-RouterDecision
-```
-
- object.
+ The result is a `RouterDecision` object.
 
  The node returns:
 
@@ -466,177 +387,237 @@ return {
 }
 ```
 
- The state now becomes:
+ The state now contains:
 
 ```
-TravelState
+message
    |
-   +── message
+   v
+router_decision
    |
-   +── router_decision
-          |
-          +── destination = Goa
-          +── needs_flight = true
-          +── needs_hotel = true
+   +-- destination = Goa
+   +-- needs_flight = true
+   +-- needs_hotel = true
 ```
 
 ---
 
- # Step 5: LangGraph Moves to Flight and Hotel Nodes
+# RouterDecision
 
- The graph is constructed with:
+ The Router does not hard-code the destination or requirements.
 
-```
-builder.add_edge(START, "route_request")
+ Instead, the LLM determines them from the user's message.
 
-builder.add_edge(
-    "route_request",
-    "flight_agent"
-)
+ For example:
 
-builder.add_edge(
-    "route_request",
-    "hotel_agent"
-)
-```
-
- This is important.
-
- After `route_request`, there are **two outgoing paths**:
+### Flight and hotel requested
 
 ```
-                 route_request
-                  /          \
-                 /            \
-                v              v
-        flight_agent       hotel_agent
+"Plan a trip to Goa with a flight and hotel."
 ```
 
- So when both are required, the Flight Agent and Hotel Agent can be executed independently.
-
- Conceptually:
+ Could produce:
 
 ```
-                 Router
-                   |
-          +--------+--------+
-          |                 |
-          v                 v
-       Flight             Hotel
-       Agent              Agent
-          |                 |
-          +--------+--------+
-                   |
-                   v
-               Build Plan
+destination = Goa
+needs_flight = true
+needs_hotel = true
 ```
+
+### Only hotel requested
+
+```
+"Find me a hotel in Goa."
+```
+
+ Could produce:
+
+```
+destination = Goa
+needs_flight = false
+needs_hotel = true
+```
+
+### Only flight requested
+
+```
+"Find me a flight to Goa."
+```
+
+ Could produce:
+
+```
+destination = Goa
+needs_flight = true
+needs_hotel = false
+```
+
+ The Router therefore decides which specialized agents need to be called.
 
 ---
 
- # Step 6: Flight Node
+# Step 3: Call Agents
 
- The Flight node is:
+ After routing, LangGraph moves to:
 
 ```
-async def flight_node(state: TravelState):
+async def call_agents(
+    state: TravelState,
+):
 ```
 
- It gets the router decision:
+ This function retrieves:
 
 ```
 decision = state["router_decision"]
 ```
 
- Then checks:
+ It then creates a list of asynchronous tasks.
+
+---
+
+# Flight Agent Delegation
+
+ If:
 
 ```
-if not decision.needs_flight:
-    return {"flight_result": None}
+decision.needs_flight
 ```
 
- So there are two possibilities.
-
- ### Flight not required
-
- For:
+ is `True`, the Router adds:
 
 ```
-Find me a hotel in Goa
-```
-
- the router may return:
-
-```
-needs_flight = false
-needs_hotel = true
-```
-
- Then the Flight node returns:
-
-```
-{
-    "flight_result": None
-}
-```
-
- No Flight Agent call is made.
-
- ### Flight required
-
- For:
-
-```
-Find me a flight to Goa
-```
-
- the router may return:
-
-```
-needs_flight = true
-```
-
- Then:
-
-```
-result = await call_flight_agent(
+call_flight_agent(
     state["message"]
 )
 ```
 
- is executed.
+ to the task list.
+
+ If a flight is not required, it adds:
+
+```
+asyncio.sleep(
+    0,
+    result=None,
+)
+```
+
+ This ensures the final result still has the expected position for the flight result.
 
 ---
 
- # Step 7: Call Flight Agent
+# Hotel Agent Delegation
 
- The function:
+ The same logic is applied to hotels.
+
+ If:
+
+```
+decision.needs_hotel
+```
+
+ is `True`, the Router adds:
+
+```
+call_hotel_agent(
+    state["message"]
+)
+```
+
+ Otherwise it adds:
+
+```
+asyncio.sleep(
+    0,
+    result=None,
+)
+```
+
+---
+
+# Parallel Agent Execution
+
+ The most important part of `call_agents()` is:
+
+```
+flight_result, hotel_result = (
+    await asyncio.gather(*tasks)
+)
+```
+
+ This means that when both agents are required, the Router executes their HTTP calls concurrently.
+
+ Conceptually:
+
+```
+                    call_agents
+                         |
+              +----------+----------+
+              |                     |
+              v                     v
+       call_flight_agent      call_hotel_agent
+              |                     |
+              | HTTP                | HTTP
+              v                     v
+        Flight Agent          Hotel Agent
+              |                     |
+              +----------+----------+
+                         |
+                         v
+                  asyncio.gather()
+```
+
+ This is more accurate than describing Flight and Hotel as separate LangGraph nodes.
+
+ They are **parallel asynchronous agent calls inside the `call_agents` LangGraph node**.
+
+---
+
+# Step 4: Call Flight Agent
+
+ The Router communicates with the Flight Agent using HTTPX.
+
+ The function is:
 
 ```
 async def call_flight_agent(
-    message: str
-) -> FlightAgentResult:
+    message: str,
+):
 ```
 
- creates an HTTP client:
+ It creates an asynchronous HTTP client:
 
 ```
-async with httpx.AsyncClient(timeout=30) as client:
+async with httpx.AsyncClient(
+    timeout=60
+) as client:
 ```
 
- Then it sends:
+ Then sends:
 
 ```
 response = await client.post(
     f"{FLIGHT_AGENT_URL}/",
     json={
         "message": message
-    }
+    },
 )
 ```
 
- So the Travel Router calls the Flight Agent through HTTP.
+ The Flight Agent URL comes from:
 
- The flow is:
+```
+FLIGHT_AGENT_URL
+```
+
+ which is imported from:
+
+```
+common.config
+```
+
+ The communication flow is:
 
 ```
 Travel Router
@@ -649,32 +630,25 @@ FLIGHT_AGENT_URL
 Flight Agent
       |
       v
-MCP search_flights
-      |
-      v
-Flight Result
+FlightAgentResult
       |
       v
 Travel Router
 ```
 
- This is the **agent-to-agent communication** part of the architecture.
-
 ---
 
- # Step 8: Validate Flight Response
+# Flight Response Validation
 
- After receiving the HTTP response:
+ After the Flight Agent responds:
 
 ```
 response.raise_for_status()
 ```
 
- checks whether the request was successful.
+ checks whether the HTTP request was successful.
 
- If the Flight Agent returns an error such as HTTP 500, an exception is raised.
-
- If successful:
+ Then:
 
 ```
 return FlightAgentResult.model_validate(
@@ -682,85 +656,43 @@ return FlightAgentResult.model_validate(
 )
 ```
 
- converts the JSON response into:
+ converts the JSON response into a validated:
 
 ```
 FlightAgentResult
 ```
 
- So:
+ The Router therefore does not blindly trust arbitrary JSON.
 
-```
-Flight Agent JSON
-       |
-       v
-response.json()
-       |
-       v
-FlightAgentResult.model_validate()
-       |
-       v
-FlightAgentResult object
-```
-
- The Flight result is then stored in the graph state:
-
-```
-{
-    "flight_result": result
-}
-```
+ The response is validated against the expected Pydantic model.
 
 ---
 
- # Step 9: Hotel Node
+# Step 5: Call Hotel Agent
 
- The Hotel node works almost exactly the same way.
-
-```
-async def hotel_node(state: TravelState):
-```
-
- It first gets:
+ The Hotel Agent is called using:
 
 ```
-decision = state["router_decision"]
+async def call_hotel_agent(
+    message: str,
+):
 ```
 
- Then:
-
-```
-if not decision.needs_hotel:
-    return {
-        "hotel_result": None
-    }
-```
-
- If a hotel isn't required, the Hotel Agent isn't called.
-
- If a hotel is required:
-
-```
-result = await call_hotel_agent(
-    state["message"]
-)
-```
-
- is executed.
-
----
-
- # Step 10: Call Hotel Agent
-
- The HTTP call is:
+ The Router sends:
 
 ```
 response = await client.post(
     f"{HOTEL_AGENT_URL}/",
     json={
         "message": message
-    }
+    },
 )
+```
+
+ The Hotel Agent URL comes from:
+
+```
+HOTEL_AGENT_URL
 ```
 
  The flow is:
@@ -776,10 +708,7 @@ HOTEL_AGENT_URL
 Hotel Agent
       |
       v
-MCP search_hotels
-      |
-      v
-Hotel Result
+HotelAgentResult
       |
       v
 Travel Router
@@ -788,83 +717,123 @@ Travel Router
  The response is validated with:
 
 ```
-HotelAgentResult.model_validate(
+return HotelAgentResult.model_validate(
     response.json()
 )
 ```
 
- The result is then added to the graph state:
+---
+
+# Agent-to-Agent Communication
+
+ The Router uses HTTP to communicate with the specialized agents.
 
 ```
-{
-    "hotel_result": result
+                 Travel Router
+                       |
+             +---------+---------+
+             |                   |
+             | HTTP              | HTTP
+             v                   v
+       Flight Agent         Hotel Agent
+             |                   |
+             | MCP               | MCP
+             v                   v
+       Flight Tools         Hotel Tools
+```
+
+ This creates a layered architecture:
+
+```
+User
+ |
+ | HTTP
+ v
+Travel Router Agent
+ |
+ | HTTP
+ +--------------------+
+ |                    |
+ v                    v
+Flight Agent       Hotel Agent
+ |                    |
+ | MCP                | MCP
+ v                    v
+Flight Tools        Hotel Tools
+```
+
+ The Router itself does **not** call `search_flights` or `search_hotels`.
+
+ The specialized agents are responsible for accessing those tools.
+
+---
+
+# Step 6: Store Agent Results
+
+ After both asynchronous calls complete:
+
+```
+flight_result, hotel_result = (
+    await asyncio.gather(*tasks)
+)
+```
+
+ the node returns:
+
+```
+return {
+    "flight_result": flight_result,
+    "hotel_result": hotel_result,
 }
 ```
 
----
-
- # Step 11: Flight and Hotel Results Come Together
-
- Once the Flight and Hotel nodes have completed, the graph moves to:
+ The LangGraph state now contains:
 
 ```
-build_plan
-```
+router_decision
+       |
+       +-- destination
+       +-- needs_flight
+       +-- needs_hotel
 
- because of:
+flight_result
+       |
+       +-- flights
+       +-- recommendation
 
-```
-builder.add_edge(
-    "flight_agent",
-    "build_plan"
-)
-
-builder.add_edge(
-    "hotel_agent",
-    "build_plan"
-)
-```
-
- Conceptually:
-
-```
-             route_request
-              /         \
-             v           v
-       flight_agent   hotel_agent
-             |           |
-             |           |
-             +-----+-----+
-                   |
-                   v
-              build_plan
-```
-
- The `build_plan()` function can access:
-
-```
-state["router_decision"]
-
-state.get("flight_result")
-
-state.get("hotel_result")
+hotel_result
+       |
+       +-- hotels
+       +-- recommendation
 ```
 
 ---
 
- # Step 12: Build the Travel Plan
+# Step 7: Build the Travel Plan
 
- The function starts by retrieving:
+ The next LangGraph node is:
+
+```
+def build_plan(
+    state: TravelState,
+):
+```
+
+ It retrieves:
 
 ```
 decision = state["router_decision"]
 
-flight_result = state.get("flight_result")
+flight_result = state.get(
+    "flight_result"
+)
 
-hotel_result = state.get("hotel_result")
+hotel_result = state.get(
+    "hotel_result"
+)
 ```
 
- Then it initializes:
+ It then initializes:
 
 ```
 selected_flight = None
@@ -876,123 +845,101 @@ hotel_cost = 0.0
 duration_days = 3
 ```
 
- The default trip duration is currently hard-coded to:
-
-```
-3 days
-```
-
 ---
 
- # Step 13: Select Flight
+# Step 8: Select Flight
 
- The code:
+ If flight results are available:
 
 ```
-if (flight_result and flight_result.flights):
-
-    selected_flight = min(
-        flight_result.flights,
-        key=lambda x: x.price
-    )
-
-    flight_cost = selected_flight.price
+if (
+    flight_result
+    and flight_result.flights
+):
 ```
 
- looks at all available flights.
+ the Router selects:
 
- It selects the flight with the **lowest price**.
+```
+selected_flight = min(
+    flight_result.flights,
+    key=lambda flight: flight.price,
+)
+```
+
+ This means the Router selects the **cheapest flight**.
 
  For example:
 
 ```
-Flight A → ₹5000
-Flight B → ₹3500
-Flight C → ₹6000
+IndiGo      ₹4,500
+Air India   ₹6,000
+Vistara     ₹5,200
 ```
 
- The code selects:
+ The selected flight is:
 
 ```
-Flight B → ₹3500
+IndiGo → ₹4,500
 ```
 
- because:
+ The flight cost is then:
 
 ```
-min(..., key=lambda x: x.price)
+flight_cost = selected_flight.price
 ```
 
- means:
+### Important
 
- > Find the object with the smallest price.
-
- The flow is:
-
-```
-Flight Results
-     |
-     v
-Compare prices
-     |
-     v
-Lowest price
-     |
-     v
-selected_flight
-```
+ The final Router selection is based on **price**, regardless of the recommendation text returned by the Flight Agent.
 
 ---
 
- # Step 14: Select Hotel
+# Step 9: Select Hotel
 
- The hotel selection works differently.
+ If hotel results are available:
 
 ```
-if (hotel_result and hotel_result.hotels):
-
-    selected_hotel = max(
-        hotel_result.hotels,
-        key=lambda x: x.rating
-    )
+if (
+    hotel_result
+    and hotel_result.hotels
+):
 ```
 
- This selects the hotel with the **highest rating**.
+ the Router selects:
+
+```
+selected_hotel = max(
+    hotel_result.hotels,
+    key=lambda hotel: hotel.rating,
+)
+```
+
+ This means the Router selects the **highest-rated hotel**.
 
  For example:
 
 ```
-Hotel A → Rating 4.2
-Hotel B → Rating 4.8
-Hotel C → Rating 4.5
+Hotel A → 4.2
+Hotel B → 4.8
+Hotel C → 4.5
 ```
 
  The selected hotel is:
 
 ```
-Hotel B → Rating 4.8
+Hotel B → 4.8
 ```
 
- The flow is:
+### Important
 
-```
-Hotel Results
-     |
-     v
-Compare ratings
-     |
-     v
-Highest rating
-     |
-     v
-selected_hotel
-```
+ The final Router selection is based on **rating**, regardless of the recommendation text returned by the Hotel Agent.
 
 ---
 
- # Step 15: Calculate Hotel Cost
+# Step 10: Calculate Hotel Cost
 
- The hotel cost is calculated as:
+ The hotel cost is calculated using:
 
 ```
 hotel_cost = (
@@ -1004,104 +951,111 @@ hotel_cost = (
  For example:
 
 ```
-Price per night = ₹4000
-Nights = 2
+Price per night = ₹4,000
+Nights          = 2
 ```
 
- Then:
+ Therefore:
 
 ```
-₹4000 × 2 = ₹8000
+₹4,000 × 2 = ₹8,000
 ```
 
- So:
+ The estimated hotel cost is:
 
 ```
-hotel_cost = ₹8000
+₹8,000
 ```
 
 ---
 
- # Step 16: Calculate Total Cost
+# Step 11: Calculate Total Cost
 
- The total is:
+ The total cost is:
 
 ```
-total = flight_cost + hotel_cost
+total = (
+    flight_cost
+    + hotel_cost
+)
 ```
 
  For example:
 
 ```
-Flight = ₹3500
-Hotel  = ₹8000
-
-Total  = ₹11500
-```
-
- So:
-
-```
-flight_cost = 3500
-hotel_cost  = 8000
-total       = 11500
+Flight = ₹4,500
+Hotel  = ₹8,000
+----------------
+Total  = ₹12,500
 ```
 
 ---
 
- # Step 17: Build Summary
+# Step 12: Build Summary
 
- The agent creates:
-
-```
-summary_parts = []
-```
-
- If a flight was selected:
+ The Router creates a summary starting with:
 
 ```
-summary_parts.append(
+summary = (
+    f"Recommended trip to "
+    f"{decision.destination}. "
+)
+```
+
+ If a flight is selected, it adds:
+
+```
+summary += (
     f"Flight: "
     f"{selected_flight.airline} "
-    f"{selected_flight.flight}"
+    f"{selected_flight.flight}. "
 )
 ```
 
  For example:
 
 ```
-Flight: IndiGo 6E123
+Flight: IndiGo 6E123.
 ```
 
- If a hotel was selected:
+ If a hotel is selected, it adds:
 
 ```
-summary_parts.append(
+summary += (
     f"Hotel: "
-    f"{selected_hotel.name}"
+    f"{selected_hotel.name}. "
 )
 ```
 
  For example:
 
 ```
-Hotel: Taj Mumbai
+Hotel: Goa Resort.
 ```
 
- Then the final summary becomes something like:
+ Finally:
 
 ```
-Recommended Goa trip. Flight: IndiGo 6E123 | Hotel: Taj Goa. Estimated total: ₹11500.00.
+summary += (
+    f"Estimated total cost: "
+    f"₹{total:.2f}."
+)
+```
+
+ The final summary could therefore be:
+
+```
+Recommended trip to Goa. Flight: IndiGo 6E123. Hotel: Goa Resort. Estimated total cost: ₹12500.00.
 ```
 
 ---
 
- # Step 18: Create TravelPlan
+# Step 13: Create TravelPlan
 
- The agent creates:
+ The Router creates the final structured plan:
 
 ```
-plan = TravelPlan(
+TravelPlan(
     destination=decision.destination,
     duration_days=duration_days,
     selected_flight=selected_flight,
@@ -1113,105 +1067,196 @@ plan = TravelPlan(
 )
 ```
 
- So the final plan contains:
+ The `TravelPlan` contains:
 
 ```
 TravelPlan
-   |
-   +── destination
-   +── duration_days
-   +── selected_flight
-   +── selected_hotel
-   +── estimated_flight_cost
-   +── estimated_hotel_cost
-   +── estimated_total_cost
-   +── summary
+ |
+ +-- destination
+ +-- duration_days
+ +-- selected_flight
+ +-- selected_hotel
+ +-- estimated_flight_cost
+ +-- estimated_hotel_cost
+ +-- estimated_total_cost
+ +-- summary
 ```
 
  The node returns:
 
 ```
 return {
-    "travel_plan": plan
+    "travel_plan": TravelPlan(...)
 }
 ```
 
 ---
 
- # Step 19: LangGraph Ends
+# Step 14: LangGraph Completes
 
- The graph has:
+ The final graph edge is:
 
 ```
 builder.add_edge(
     "build_plan",
-    END
+    END,
 )
 ```
 
- So:
+ Therefore:
 
 ```
+START
+  |
+  v
+route_request
+  |
+  v
+call_agents
+  |
+  v
 build_plan
-    |
-    v
-   END
+  |
+  v
+END
 ```
 
- At this point, `travel_graph.ainvoke()` returns the complete graph state.
-
- Conceptually:
-
-```
-result = {
-    "message": "...",
-    "router_decision": ...,
-    "flight_result": ...,
-    "hotel_result": ...,
-    "travel_plan": ...
-}
-```
+ After `ainvoke()` completes, the Router has access to the complete state.
 
 ---
 
- # Step 20: Build API Response
+# Step 15: Return API Response
 
- The API gets:
-
-```
-decision = result["router_decision"]
-```
-
- Then returns:
+ The API retrieves:
 
 ```
-{
+decision = result[
+    "router_decision"
+]
+```
+
+ and:
+
+```
+flight_result = result.get(
+    "flight_result"
+)
+
+hotel_result = result.get(
+    "hotel_result"
+)
+```
+
+ The final response is:
+
+```
+return {
     "agent": "travel-router-agent",
-    "destination": decision.destination,
-    "decision": decision.model_dump(),
-    "flight_agent": ...,
-    "hotel_agent": ...,
-    "travel_plan": ...
+
+    "destination": (
+        decision.destination
+    ),
+
+    "decision": (
+        decision.model_dump()
+    ),
+
+    "flight_agent": (
+        flight_result.model_dump()
+        if flight_result
+        else None
+    ),
+
+    "hotel_agent": (
+        hotel_result.model_dump()
+        if hotel_result
+        else None
+    ),
+
+    "travel_plan": (
+        result["travel_plan"]
+        .model_dump()
+    ),
 }
 ```
 
- The final response contains information from **all agents**.
+ This exposes both the intermediate agent results and the final travel plan.
 
 ---
 
- # Example End-to-End Request
+# API Endpoints
 
- Suppose the user sends:
+## Health Check
+
+```
+GET /
+```
+
+ The health endpoint returns:
 
 ```
 {
-  "message": "Plan a 3 day trip to Goa. Find a flight and hotel."
+  "status": "ok",
+  "agent": "travel-router-agent",
+  "orchestration": "langgraph"
 }
 ```
 
- ## Router decision
+ This endpoint is useful for checking whether the Router Agent is running.
 
- The LLM might return:
+---
+
+# Travel Planning API
+
+```
+POST /
+```
+
+ Request:
+
+```
+{
+  "message": "Plan a 3 day trip to Goa. Find me a flight and hotel."
+}
+```
+
+ The request is processed by the LangGraph workflow.
+
+```
+POST /
+  |
+  v
+route_request
+  |
+  v
+call_agents
+  |
+  +----> Flight Agent
+  |
+  +----> Hotel Agent
+  |
+  v
+build_plan
+  |
+  v
+TravelPlan
+```
+
+---
+
+# Example End-to-End Request
+
+ Input:
+
+```
+{
+  "message": "Plan a 3 day trip to Goa. Find me a flight and hotel."
+}
+```
+
+## Router Decision
+
+ The LLM may produce:
 
 ```
 {
@@ -1221,41 +1266,13 @@ decision = result["router_decision"]
 }
 ```
 
+ The Router then calls both agents.
+
 ---
 
- ## Flight Agent
+# Flight Agent Result
 
- The Router calls:
-
-```
-POST FLIGHT_AGENT_URL/
-```
-
- with:
-
-```
-{
-  "message": "Plan a 3 day trip to Goa. Find a flight and hotel."
-}
-```
-
- The Flight Agent:
-
-```
-Receives request
-     ↓
-Determines Goa
-     ↓
-Calls MCP search_flights
-     ↓
-Gets flights
-     ↓
-LLM recommends flight
-     ↓
-Returns FlightAgentResult
-```
-
- Example:
+ The Flight Agent might return:
 
 ```
 {
@@ -1276,37 +1293,20 @@ Returns FlightAgentResult
 }
 ```
 
+ The Router selects:
+
+```
+IndiGo 6E123
+₹4,500
+```
+
+ because it has the lowest price.
+
 ---
 
- ## Hotel Agent
+# Hotel Agent Result
 
- At the same time, the Router calls:
-
-```
-POST HOTEL_AGENT_URL/
-```
-
- with the same user message.
-
- The Hotel Agent:
-
-```
-Receives request
-     ↓
-Determines Goa
-     ↓
-Determines nights
-     ↓
-Calls MCP search_hotels
-     ↓
-Gets hotels
-     ↓
-LLM recommends hotel
-     ↓
-Returns HotelAgentResult
-```
-
- Example:
+ The Hotel Agent might return:
 
 ```
 {
@@ -1329,77 +1329,50 @@ Returns HotelAgentResult
 }
 ```
 
----
-
- # Step 21: Build Final Plan
-
- The Router receives both results.
-
- ### Flight selection
-
- Available:
-
-```
-IndiGo → ₹4500
-Air India → ₹6000
-```
-
  The Router selects:
 
 ```
-IndiGo → ₹4500
-```
-
- because it has the lowest price.
-
- ### Hotel selection
-
- Available:
-
-```
-Goa Resort  → 4.5
-Beach Hotel → 4.2
-```
-
- The Router selects:
-
-```
-Goa Resort → 4.5
+Goa Resort
+Rating: 4.5
 ```
 
  because it has the highest rating.
 
- ### Cost calculation
-
- Flight:
+ The hotel cost is:
 
 ```
-₹4500
-```
-
- Hotel:
-
-```
-₹4000 × 2 nights
-= ₹8000
-```
-
- Total:
-
-```
-₹4500 + ₹8000
-= ₹12500
+₹4,000 × 2
+= ₹8,000
 ```
 
 ---
 
- # Final Response
+# Final Cost
 
- The Travel Router can return something conceptually like:
+ The Router calculates:
+
+```
+Flight
+₹4,500
+
+Hotel
+₹8,000
+
+----------------
+Total
+₹12,500
+```
+
+---
+
+# Example Final Response
+
+ The API response can look like:
 
 ```
 {
   "agent": "travel-router-agent",
+
   "destination": "Goa",
 
   "decision": {
@@ -1433,6 +1406,12 @@ Goa Resort → 4.5
         "price_per_night": 4000,
         "rating": 4.5,
         "nights": 2
+      },
+      {
+        "name": "Beach Hotel",
+        "price_per_night": 3500,
+        "rating": 4.2,
+        "nights": 2
       }
     ],
     "recommendation": "Goa Resort has the highest rating."
@@ -1455,188 +1434,199 @@ Goa Resort → 4.5
     "estimated_flight_cost": 4500,
     "estimated_hotel_cost": 8000,
     "estimated_total_cost": 12500,
-    "summary": "Recommended Goa trip. Flight: IndiGo 6E123 | Hotel: Goa Resort. Estimated total: ₹12500.00."
+    "summary": "Recommended trip to Goa. Flight: IndiGo 6E123. Hotel: Goa Resort. Estimated total cost: ₹12500.00."
   }
 }
 ```
 
 ---
 
- # Complete LangGraph Flow
+# Complete Workflow
 
- The most important part of this application is the LangGraph.
+ The actual implementation can be summarized as:
 
 ```
-                         START
+                         USER
+                           |
+                           | POST /
+                           v
+                +----------------------+
+                | Travel Router Agent  |
+                |       FastAPI        |
+                +----------+-----------+
                            |
                            v
                   +----------------+
                   | route_request  |
-                  |                |
-                  |      LLM       |
                   +-------+--------+
                           |
-                 RouterDecision
-                          |
-             +------------+------------+
-             |                         |
-             v                         v
-      +--------------+         +--------------+
-      | flight_agent |         | hotel_agent  |
-      +------+-------+         +------+-------+
-             |                        |
-             | HTTP                   | HTTP
-             v                        v
-      +--------------+         +--------------+
-      | Flight Agent |         | Hotel Agent  |
-      +------+-------+         +------+-------+
-             |                        |
-             | FlightResult           | HotelResult
-             |                        |
-             +------------+-----------+
+                          | LLM
+                          v
+                  +----------------+
+                  | RouterDecision |
+                  +-------+--------+
                           |
                           v
-                  +---------------+
-                  |   build_plan  |
-                  |               |
-                  | Select Flight |
-                  | Select Hotel  |
-                  | Calculate Cost|
-                  +-------+-------+
+                  +----------------+
+                  |  call_agents   |
+                  +-------+--------+
                           |
-                          v
-                         END
+                 +--------+--------+
+                 |                 |
+                 | asyncio.gather  |
+                 |                 |
+                 v                 v
+        +----------------+ +----------------+
+        | Flight Agent   | | Hotel Agent    |
+        +-------+--------+ +-------+--------+
+                |                  |
+                | HTTP             | HTTP
+                v                  v
+        FlightAgentResult   HotelAgentResult
+                |                  |
+                +--------+---------+
+                         |
+                         v
+                  +--------------+
+                  |  build_plan  |
+                  +------+-------+
+                         |
+              +----------+----------+
+              |                     |
+              v                     v
+        Cheapest Flight      Highest-rated Hotel
+              |                     |
+              +----------+----------+
+                         |
+                         v
+                  Calculate Cost
+                         |
+                         v
+                   TravelPlan
+                         |
+                         v
+                        END
+                         |
+                         v
+                       USER
 ```
 
 ---
 
- # How the Three Agents Work Together
+# Router Agent vs Specialized Agents
 
- Your overall system now has three agents:
+ The system contains three agents with different responsibilities.
 
-```
-                  USER
-                    |
-                    v
-          +--------------------+
-          |  Travel Router     |
-          |      Agent         |
-          +---------+----------+
-                    |
-             Understand request
-                    |
-          +---------+---------+
-          |                   |
-          v                   v
- +----------------+   +----------------+
- | Flight Agent   |   | Hotel Agent    |
- +-------+--------+   +-------+--------+
-         |                    |
-         v                    v
-   MCP Flight Tool      MCP Hotel Tool
-         |                    |
-         v                    v
-   Flight Results       Hotel Results
-         |                    |
-         +---------+----------+
-                   |
-                   v
-             Travel Router
-                   |
-                   v
-             Final TravelPlan
-```
+## Travel Router Agent
 
- The responsibility of each agent is:
-
- ### Travel Router Agent
+ The Router is responsible for orchestration:
 
 ```
 Understand request
-      ↓
-Decide required agents
-      ↓
-Call agents
-      ↓
-Combine results
-      ↓
-Build travel plan
+       |
+       v
+Create RouterDecision
+       |
+       v
+Delegate to agents
+       |
+       v
+Collect results
+       |
+       v
+Build TravelPlan
 ```
 
- ### Flight Agent
+## Flight Agent
+
+ The Flight Agent handles flight-specific operations:
 
 ```
-Receive travel request
-      ↓
-Determine destination
-      ↓
-Call search_flights MCP tool
-      ↓
-Get flights
-      ↓
-LLM recommendation
-      ↓
+Receive request
+       |
+       v
+Search flights
+       |
+       v
+Evaluate flights
+       |
+       v
 Return FlightAgentResult
 ```
 
- ### Hotel Agent
+## Hotel Agent
+
+ The Hotel Agent handles hotel-specific operations:
 
 ```
-Receive travel request
-      ↓
-Determine destination/nights
-      ↓
-Call search_hotels MCP tool
-      ↓
-Get hotels
-      ↓
-LLM recommendation
-      ↓
+Receive request
+       |
+       v
+Search hotels
+       |
+       v
+Evaluate hotels
+       |
+       v
 Return HotelAgentResult
+```
+
+ The architecture therefore follows:
+
+```
+                 Travel Router
+                      |
+              Agent-to-Agent HTTP
+                 /            \
+                v              v
+         Flight Agent      Hotel Agent
+                |              |
+               MCP            MCP
+                |              |
+                v              v
+        Flight Search      Hotel Search
 ```
 
 ---
 
- # Important: Router vs MCP vs A2A
+# HTTP vs MCP Responsibilities
 
- There are **three communication layers** in your overall system.
+ There are two distinct communication layers.
 
- ## 1\. User → Travel Router
+## Router → Specialized Agents
 
- This is HTTP:
-
-```
-User
-  |
-  | HTTP POST
-  v
-Travel Router
-```
-
- ## 2\. Travel Router → Flight/Hotel Agents
-
- This is also HTTP, used for agent-to-agent communication:
+ The Router uses HTTP:
 
 ```
 Travel Router
-    |
-    +---- HTTP ----> Flight Agent
-    |
-    +---- HTTP ----> Hotel Agent
+      |
+      | HTTPX
+      v
+Flight Agent
 ```
 
- ## 3\. Flight/Hotel Agents → MCP
+ and:
 
- The specialized agents use MCP to access tools:
+```
+Travel Router
+      |
+      | HTTPX
+      v
+Hotel Agent
+```
+
+## Specialized Agents → Tools
+
+ The specialized agents use MCP:
 
 ```
 Flight Agent
-    |
-    | MCP
-    v
+     |
+     | MCP
+     v
 MCP Gateway
-    |
-    v
+     |
+     v
 search_flights
 ```
 
@@ -1644,249 +1634,377 @@ search_flights
 
 ```
 Hotel Agent
-    |
-    | MCP
-    v
+     |
+     | MCP
+     v
 MCP Gateway
-    |
-    v
+     |
+     v
 search_hotels
 ```
 
- So the overall architecture is:
+ Therefore:
 
 ```
-                         USER
-                           |
-                           | HTTP
-                           v
-                  +------------------+
-                  | Travel Router    |
-                  |      Agent       |
-                  +--------+---------+
-                           |
-                    HTTP / Agent calls
-                    /               \
-                   /                 \
-                  v                   v
-        +----------------+   +----------------+
-        | Flight Agent   |   | Hotel Agent    |
-        +-------+--------+   +-------+--------+
-                |                    |
-               MCP                  MCP
-                |                    |
-                v                    v
-        +---------------+    +---------------+
-        | MCP Gateway   |    | MCP Gateway   |
-        +-------+-------+    +-------+-------+
-                |                    |
-                v                    v
-        search_flights        search_hotels
+USER
+ |
+ | HTTP
+ v
+TRAVEL ROUTER
+ |
+ +---- HTTP ----> FLIGHT AGENT ---- MCP ----> Flight Tool
+ |
+ +---- HTTP ----> HOTEL AGENT  ---- MCP ----> Hotel Tool
+ |
+ v
+TRAVEL PLAN
 ```
 
 ---
 
- # Important Current Behavior
+# Current Selection Logic
 
- There are a few things to be aware of in the current implementation.
+ The Router's final selection logic is deterministic.
 
- ## 1\. Final flight selection is based only on price
+## Flight
 
- The Flight Agent's LLM may recommend a flight using its own reasoning, but the Router ultimately does:
+ The cheapest flight is selected:
 
 ```
-selected_flight = min(
+min(
     flight_result.flights,
-    key=lambda x: x.price
+    key=lambda flight: flight.price,
 )
 ```
 
- So the Router selects the **cheapest flight**.
+ Therefore:
 
 ```
-Flight Agent recommendation
-          |
-          X
-          |
-Travel Router ignores recommendation
-          |
-          v
-Select cheapest flight
+Lowest price → Selected flight
 ```
 
- The final Travel Plan therefore uses the cheapest flight rather than necessarily the Flight Agent's LLM recommendation.
+## Hotel
 
----
-
- ## 2\. Final hotel selection is based only on rating
-
- The Router does:
+ The highest-rated hotel is selected:
 
 ```
-selected_hotel = max(
+max(
     hotel_result.hotels,
-    key=lambda x: x.rating
+    key=lambda hotel: hotel.rating,
 )
 ```
 
- So it selects the hotel with the **highest rating**.
-
- The Hotel Agent's recommendation is not directly used to make this final selection.
+ Therefore:
 
 ```
-Hotel Agent recommendation
-          |
-          X
-          |
-Travel Router
-          |
-          v
-Select highest-rated hotel
+Highest rating → Selected hotel
 ```
+
+ The Router does not use the textual `recommendation` returned by either specialized agent when selecting the final flight or hotel.
 
 ---
 
- ## 3\. Duration is hard-coded
+# Current Limitations
 
- Currently:
+ There are several hard-coded or implementation-specific behaviors in the current version.
+
+## 1\. Trip duration is hard-coded
+
+ The code contains:
 
 ```
 duration_days = 3
 ```
 
- So every final travel plan has:
+ Therefore every `TravelPlan` currently reports:
 
 ```
-{
-  "duration_days": 3
-}
+duration_days = 3
 ```
 
- regardless of what the user actually requested.
+ regardless of the duration requested by the user.
 
- A future version should derive the duration from the `RouterDecision` or from the user request.
+ A future version could add duration to `RouterDecision` and use it here.
 
 ---
 
- # Final End-to-End Flow
+## 2\. Flight selection only considers price
 
- The entire system can be understood in one diagram:
+ The Router selects:
 
 ```
-                               USER
+min(
+    flight_result.flights,
+    key=lambda flight: flight.price,
+)
+```
+
+ Therefore the final flight is always the cheapest available flight.
+
+ The Flight Agent's recommendation does not affect this final selection.
+
+---
+
+## 3\. Hotel selection only considers rating
+
+ The Router selects:
+
+```
+max(
+    hotel_result.hotels,
+    key=lambda hotel: hotel.rating,
+)
+```
+
+ Therefore the final hotel is always the highest-rated available hotel.
+
+ Price is used only when calculating the final hotel cost.
+
+---
+
+## 4\. Agent calls depend on the Router LLM
+
+ The Router uses:
+
+```
+llm.with_structured_output(
+    RouterDecision
+)
+```
+
+ to determine whether the Flight Agent and Hotel Agent should be called.
+
+ Therefore the quality of routing depends on the LLM correctly interpreting the user's request.
+
+---
+
+## 5\. Both agents receive the original user message
+
+ The Router passes:
+
+```
+state["message"]
+```
+
+ to both specialized agents.
+
+ For example:
+
+```
+"Plan a 3 day trip to Goa. Find me a flight and hotel."
+```
+
+ is sent unchanged to both the Flight Agent and Hotel Agent.
+
+ The Router does not currently create separate specialized instructions such as:
+
+```
+"Find flights to Goa"
+```
+
+ and:
+
+```
+"Find hotels in Goa for 2 nights"
+```
+
+---
+
+# Why LangGraph Is Used
+
+ LangGraph provides a structured workflow around the Router Agent.
+
+ Instead of manually writing:
+
+```
+call router
+call flight
+call hotel
+build result
+```
+
+ the workflow is represented as a graph:
+
+```
+START
+  |
+  v
+route_request
+  |
+  v
+call_agents
+  |
+  v
+build_plan
+  |
+  v
+END
+```
+
+ The graph state carries information between each stage.
+
+ This makes the orchestration easier to extend later.
+
+ For example, future nodes could include:
+
+```
+route_request
+      |
+      v
+validate_request
+      |
+      v
+call_agents
+      |
+      v
+check_budget
+      |
+      v
+build_plan
+      |
+      v
+END
+```
+
+---
+
+# Complete System Architecture
+
+ The complete travel system is:
+
+```
+                                USER
+                                  |
+                                  | HTTP
+                                  v
+                    +-------------------------+
+                    |   Travel Router Agent   |
+                    |                         |
+                    |        FastAPI          |
+                    |        LangGraph        |
+                    +------------+------------+
                                  |
-                                 | "Plan 3 days in Goa
-                                 |  with flight and hotel"
+                                 | LLM
                                  v
-                    +--------------------------+
-                    |   TRAVEL ROUTER AGENT    |
-                    |         FastAPI           |
-                    +------------+-------------+
+                         RouterDecision
                                  |
                                  v
-                       +----------------+
-                       |   Router LLM   |
-                       +-------+--------+
+                           call_agents
+                          /           \
+                         /             \
+                        v               v
+              +----------------+ +----------------+
+              |  Flight Agent  | |  Hotel Agent   |
+              +-------+--------+ +-------+--------+
+                      |                  |
+                      | MCP              | MCP
+                      v                  v
+              +---------------+  +---------------+
+              | Flight Tools  |  | Hotel Tools   |
+              +---------------+  +---------------+
+                      |                  |
+                      v                  v
+                Flight Results      Hotel Results
+                      |                  |
+                      +--------+---------+
                                |
                                v
-                     +-------------------+
-                     | RouterDecision    |
+                         build_plan
+                               |
+                     +---------+---------+
                      |                   |
-                     | destination=Goa   |
-                     | flight=true       |
-                     | hotel=true        |
+                     v                   v
+                Cheapest Flight    Highest-rated
+                                      Hotel
+                     |                   |
                      +---------+---------+
                                |
-                 +-------------+-------------+
-                 |                           |
-                 v                           v
-       +-------------------+       +-------------------+
-       |   Flight Node     |       |    Hotel Node     |
-       +---------+---------+       +---------+---------+
-                 |                           |
-                 | HTTP                      | HTTP
-                 v                           v
-       +-------------------+       +-------------------+
-       |   Flight Agent    |       |    Hotel Agent    |
-       +---------+---------+       +---------+---------+
-                 |                           |
-                 | MCP                       | MCP
-                 v                           v
-       +-------------------+       +-------------------+
-       | search_flights    |       | search_hotels     |
-       +---------+---------+       +---------+---------+
-                 |                           |
-                 v                           v
-          Flight Results              Hotel Results
-                 |                           |
-                 +-------------+-------------+
+                               v
+                         Cost Calculation
                                |
                                v
-                      +----------------+
-                      |   build_plan   |
-                      +-------+--------+
-                              |
-                    +---------+---------+
-                    |                   |
-                    v                   v
-              Cheapest Flight     Highest-rated
-                                      Hotel
-                    |                   |
-                    +---------+---------+
-                              |
-                              v
-                       Calculate Costs
-                              |
-                              v
-                       +--------------+
-                       |  TravelPlan  |
-                       +------+-------+
-                              |
-                              v
-                            USER
+                          TravelPlan
+                               |
+                               v
+                              USER
 ```
 
- ## Summary
+---
 
- The **Travel Router Agent is the orchestrator** of the entire travel system.
+# Summary
 
- Its flow is:
+ The **Travel Router Agent** is the orchestration layer of the travel planning system.
+
+ Its actual implementation is:
 
 ```
 User Request
-     ↓
-Travel Router
-     ↓
-Router LLM
-     ↓
+     |
+     v
+FastAPI
+     |
+     v
+LangGraph
+     |
+     v
+route_request
+     |
+     | LLM
+     v
 RouterDecision
-     ↓
-┌───────────────┬────────────────┐
-│               │                │
-↓               ↓                ↓
-Flight Agent   Hotel Agent      ...
-│               │
-↓               ↓
-MCP            MCP
-│               │
-↓               ↓
-Flights        Hotels
-│               │
-└───────┬───────┘
-        ↓
-   Build Plan
-        ↓
-Select cheapest flight
-        ↓
-Select highest-rated hotel
-        ↓
-Calculate total cost
-        ↓
-TravelPlan
-        ↓
-Final JSON Response
+     |
+     v
+call_agents
+     |
+     +------ asyncio.gather() ------+
+     |                              |
+     v                              v
+Flight Agent                   Hotel Agent
+     |                              |
+     | HTTP                         | HTTP
+     v                              v
+FlightAgentResult             HotelAgentResult
+     |                              |
+     +--------------+---------------+
+                    |
+                    v
+               build_plan
+                    |
+                    v
+            Cheapest Flight
+                    +
+            Highest-rated Hotel
+                    |
+                    v
+            Calculate Total Cost
+                    |
+                    v
+               TravelPlan
+                    |
+                    v
+                   END
 ```
 
- **In one sentence:**
+ The key architectural principle is:
 
- > The Travel Router Agent acts as the coordinator: it uses an LLM to understand the user's travel request, calls the required Flight and Hotel Agents over HTTP, receives their results, selects the cheapest flight and highest-rated hotel, calculates the estimated trip cost, builds a `TravelPlan`, and returns the complete travel itinerary.
+> **The Travel Router Agent is responsible for orchestration, while the Flight Agent and Hotel Agent are responsible for their respective domains. The Router uses an LLM for routing decisions, HTTP for agent-to-agent communication, LangGraph for workflow orchestration, and the specialized agents use MCP to access their tools.**
+
+ In short:
+
+```
+Router Agent
+    |
+    +--> decides what is needed
+    |
+    +--> delegates to Flight Agent
+    |
+    +--> delegates to Hotel Agent
+    |
+    +--> collects results
+    |
+    +--> selects final options
+    |
+    +--> calculates cost
+    |
+    +--> returns TravelPlan
+```

@@ -1,57 +1,56 @@
-# Hotel Agent
+ # Hotel Agent
 
-## Overview
+ ## Overview
 
- The **Hotel Agent** is a FastAPI-based AI agent that searches for hotels using an MCP (Model Context Protocol) tool and then uses an LLM to recommend the best hotel from the available results.
+ The **Hotel Agent** is an independent FastAPI-based AI agent that searches for hotels using an MCP (Model Context Protocol) tool and uses an LLM to recommend the best hotel from the returned results.
 
- agents/hotel_agent/main.py
+ Implementation:
 
- The agent receives a user's travel request, determines the destination and number of nights, calls the MCP `search_hotels` tool, converts the returned data into `Hotel` models, and finally asks the LLM to recommend the best hotel based on **rating and price**.
+```
+agents/hotel_agent/main.py
+```
+
+ The Hotel Agent communicates with the MCP Gateway through the `search_hotels` tool.
 
  The overall flow is:
 
 ```
-User / Client
-     |
-     | POST /
-     v
-Hotel Agent (FastAPI)
-     |
-     | Determine destination
-     | Determine number of nights
-     v
+Client / Router
+      |
+      | HTTP POST /
+      v
+Hotel Agent
+      |
+      | Determine destination
+      | Determine nights
+      v
 MCP Gateway
-     |
-     | search_hotels
-     v
+      |
+      | search_hotels
+      v
 Hotel Data
-     |
-     v
+      |
+      v
 Hotel Models
-     |
-     v
+      |
+      v
 LLM
-     |
-     | Recommend best hotel
-     v
+      |
+      | Recommend best hotel
+      v
 HotelAgentResult
-     |
-     v
-User / Client
+      |
+      v
+Client / Router
 ```
 
 ---
 
-# Architecture
-
- The Hotel Agent consists of three major responsibilities:
+ # Architecture
 
 ```
 +-----------------------+
-|        Client         |
-|                       |
-| "Find a hotel in      |
-|       Mumbai"         |
+|    Client / Router    |
 +-----------+-----------+
             |
             | HTTP POST /
@@ -76,47 +75,47 @@ User / Client
 +-----------------------+
 |      Hotel Agent      |
 |                       |
-| Convert data → Hotel  |
-| models                |
+|   Hotel(**hotel)      |
 +-----------+-----------+
             |
-            | Hotel data
+            | Structured hotel data
             v
 +-----------------------+
 |          LLM          |
 |                       |
-| Recommend best hotel  |
-| based on rating/price |
+|  Evaluate price and   |
+|       rating          |
 +-----------+-----------+
             |
+            | Recommendation
             v
 +-----------------------+
-|   HotelAgentResult    |
+|    HotelAgentResult   |
 +-----------------------+
 ```
 
 ---
 
-# API Endpoints
+ # API Endpoints
 
- The Hotel Agent exposes two endpoints.
+ The Hotel Agent exposes two endpoints:
 
-## 1\. Agent Card
+```
+GET /.well-known/agent-card.json
+POST /
+```
+
+---
+
+ # 1\. Agent Card
 
 ```
 GET /.well-known/agent-card.json
 ```
 
- This endpoint provides information about the Hotel Agent.
+ The Agent Card provides information about the Hotel Agent.
 
- It tells other agents or clients:
-
-- Agent name
-- Agent description
-- Agent URL
-- Supported skills
-
- The endpoint is defined as:
+ It is implemented as:
 
 ```
 @app.get(
@@ -126,10 +125,10 @@ GET /.well-known/agent-card.json
 async def agent_card():
 ```
 
- It returns:
+ The returned `AgentCard` contains:
 
 ```
-return AgentCard(
+AgentCard(
     name="hotel-agent",
     description="Finds hotels for travel destinations",
     url="http://127.0.0.1:8002",
@@ -140,7 +139,7 @@ return AgentCard(
 )
 ```
 
- Conceptually, the response looks like:
+ Example response:
 
 ```
 {
@@ -154,21 +153,21 @@ return AgentCard(
 }
 ```
 
- This endpoint is mainly used for **agent discovery**.
+ The Agent Card is used for **agent discovery**.
 
- It does not search for hotels.
+ It does not perform a hotel search.
 
 ---
 
-# 2\. Hotel Request
+ # 2\. Hotel Request
 
 ```
 POST /
 ```
 
- This is the main endpoint that processes hotel requests.
+ This is the main endpoint used to process hotel requests.
 
- For example:
+ Example request:
 
 ```
 {
@@ -176,57 +175,54 @@ POST /
 }
 ```
 
- FastAPI converts this request into an:
+ The request is validated using:
 
 ```
 AgentRequest
 ```
 
- object.
-
- The request is then handled by:
+ and handled by:
 
 ```
-async def handle_request(
-    request: AgentRequest,
-):
+@app.post("/", response_model=HotelAgentResult)
+async def handle_request(request: AgentRequest):
 ```
 
 ---
 
-# Complete Request Flow
+ # Request Processing Flow
 
- The Hotel Agent follows these steps:
+ The Hotel Agent processes a request in the following order:
 
 ```
-1. Receive user request
+1. Receive request
         ↓
 2. Determine destination
         ↓
 3. Determine number of nights
         ↓
-4. Call MCP search_hotels tool
+4. Call MCP search_hotels
         ↓
 5. Receive raw hotel data
         ↓
-6. Convert raw data to Hotel models
+6. Convert data to Hotel models
         ↓
-7. Check if hotels exist
+7. Check whether hotels were found
         ↓
 8. Create structured LLM
         ↓
-9. Send user request + hotel data to LLM
+9. Send request + hotel data to LLM
         ↓
-10. LLM recommends best hotel
+10. LLM recommends a hotel
         ↓
-11. Add agent/tool information
+11. Add agent/tool metadata
         ↓
 12. Return HotelAgentResult
 ```
 
 ---
 
-# Step 1: Application Startup
+ # Step 1: Application Initialization
 
  When the application starts:
 
@@ -238,238 +234,200 @@ llm = get_llm()
 
  The first line creates the FastAPI application.
 
-```
-FastAPI Application
-       |
-       +── GET /.well-known/agent-card.json
-       |
-       +── POST /
-```
-
  The second line initializes the LLM:
 
 ```
 llm = get_llm()
 ```
 
- The actual LLM configuration comes from:
+ The LLM configuration is provided by:
 
 ```
-common.llm
+common/llm.py
 ```
 
- The LLM object is created when the application starts, but the actual recommendation request happens later inside `handle_request()`.
+ The LLM is initialized once when the application starts.
 
 ---
 
-# Step 2: Client Sends Hotel Request
+ # Step 2: Receive the Request
 
  Suppose the client sends:
 
 ```
 {
-  "message": "I need a hotel in Mumbai for 3 days"
+  "message": "Find me a hotel in Mumbai for 3 days"
 }
 ```
 
- to:
+ The request reaches:
 
 ```
-POST /
-```
-
- FastAPI receives the request and creates an `AgentRequest` object.
-
- Conceptually:
-
-```
-JSON Request
-     ↓
-FastAPI
-     ↓
-AgentRequest
-     ↓
 handle_request()
 ```
 
- The message is available as:
+ The request message is available through:
 
 ```
 request.message
 ```
 
- which contains:
+ Conceptually:
 
 ```
-I need a hotel in Mumbai for 3 days
+JSON Request
+     |
+     v
+FastAPI
+     |
+     v
+AgentRequest
+     |
+     v
+handle_request()
 ```
 
 ---
 
-# Step 3: Determine Destination
+ # Step 3: Determine Destination
 
- The code starts with:
+ The destination initially defaults to:
 
 ```
 destination = "goa"
 ```
 
- So Goa is the default destination.
-
- Then it checks:
+ The agent then checks whether the request contains `"mumbai"`:
 
 ```
 if "mumbai" in request.message.lower():
     destination = "mumbai"
 ```
 
- For:
-
-```
-"I need a hotel in Mumbai for 3 days"
-```
-
- the code converts the message to lowercase:
-
-```
-"i need a hotel in mumbai for 3 days"
-```
-
- Then:
-
-```
-"mumbai" in request.message.lower()
-```
-
- returns:
-
-```
-True
-```
-
  Therefore:
 
 ```
+Message contains "mumbai"
+        |
+        v
 destination = "mumbai"
 ```
 
- The flow is:
+ Otherwise:
 
 ```
-User Message
-     |
-     v
-Does message contain "mumbai"?
-     |
-   +---+---+
-   |       |
-  YES      NO
-   |       |
-   v       v
-Mumbai    Goa
+Message does not contain "mumbai"
+        |
+        v
+destination = "goa"
 ```
 
-### Current limitation
-
- The destination logic currently supports only:
+ ### Current behavior
 
 ```
-Mumbai → Mumbai
-Everything else → Goa
+"Find a hotel in Mumbai"
+        ↓
+mumbai
 ```
 
- For example:
-
 ```
-"Hotel in Mumbai"  → Mumbai
-"Hotel in Goa"     → Goa
-"Hotel in Delhi"   → Goa
-"Hotel in Chennai" → Goa
-"Hotel in Dubai"   → Goa
+"Find a hotel in Goa"
+        ↓
+goa
 ```
 
- The code could later be improved to extract the destination dynamically.
+```
+"Find a hotel in Delhi"
+        ↓
+goa
+```
+
+```
+"Find a hotel in Chennai"
+        ↓
+goa
+```
+
+ The current implementation therefore effectively supports:
+
+```
+Mumbai → mumbai
+Everything else → goa
+```
+
+ The destination is **not currently extracted dynamically** from the user request.
 
 ---
 
-# Step 4: Determine Number of Nights
+ # Step 4: Determine Number of Nights
 
- The code starts with:
+ The agent starts with:
 
 ```
 nights = 2
 ```
 
- So the default stay is:
+ Therefore, the default value is:
 
 ```
 2 nights
 ```
 
- Then it checks:
+ The code then checks:
 
 ```
 if "3 day" in request.message.lower():
     nights = 2
 ```
 
- For:
-
-```
-"I need a hotel in Mumbai for 3 days"
-```
-
- the condition is true.
-
- However, the value is still:
+ This means that when the request contains `"3 day"`, the value remains:
 
 ```
 nights = 2
 ```
 
- because the code assigns:
+ For example:
 
 ```
+"Find a hotel in Mumbai for 3 days"
+        |
+        v
+"3 day" detected
+        |
+        v
 nights = 2
 ```
 
- again.
-
- Therefore, despite the `"3 day"` condition, the actual number of nights sent to the MCP tool remains **2**.
-
- The current logic is effectively:
+ This can represent a three-day trip with two hotel nights:
 
 ```
-Default
-  ↓
-2 nights
-
-"3 day" found?
-  ↓
-Yes
-  ↓
-Still 2 nights
+Day 1 → Check-in
+Day 2 → Stay
+Day 3 → Check-out
 ```
 
- This is likely a bug or unfinished logic.
-
- If the intention is:
+ ### Current behavior
 
 ```
-3 days → 3 days
+Default                  → 2 nights
+"3 day" in request       → 2 nights
 ```
 
- or:
+ The current implementation does not dynamically extract arbitrary stay durations.
+
+ For example, there is no separate handling for:
 
 ```
-3 days → 2 nights
+1 night
+3 nights
+4 nights
+5 days
+1 week
 ```
-
- the code should explicitly implement that conversion.
 
 ---
 
-# Step 5: Call the MCP Hotel Tool
+ # Step 5: Call the MCP Hotel Tool
 
  After determining:
 
@@ -487,27 +445,7 @@ raw_hotels = await call_mcp_hotel_tool(
 )
 ```
 
- For example:
-
-```
-destination = "mumbai"
-nights = 2
-```
-
- The call becomes:
-
-```
-call_mcp_hotel_tool(
-    "mumbai",
-    2
-)
-```
-
----
-
-# Step 6: MCP Client Connects to Gateway
-
- Inside:
+ The MCP helper is:
 
 ```
 async def call_mcp_hotel_tool(
@@ -516,33 +454,37 @@ async def call_mcp_hotel_tool(
 ) -> list[dict]:
 ```
 
- the code creates an MCP client:
+---
+
+ # Step 6: Connect to the MCP Gateway
+
+ Inside `call_mcp_hotel_tool()`, the agent creates an MCP client:
 
 ```
 async with Client(MCP_GATEWAY_URL) as client:
 ```
 
- The gateway URL comes from:
+ `MCP_GATEWAY_URL` comes from:
 
 ```
 from common.config import MCP_GATEWAY_URL
 ```
 
- The flow is:
+ The communication flow is:
 
 ```
 Hotel Agent
      |
-     | MCP connection
+     | MCP Client
      v
 MCP Gateway
 ```
 
 ---
 
-# Step 7: Call `search_hotels`
+ # Step 7: Call `search_hotels`
 
- The agent then executes:
+ The agent calls the MCP tool:
 
 ```
 result = await client.call_tool(
@@ -554,7 +496,14 @@ result = await client.call_tool(
 )
 ```
 
- For example:
+ For example, for:
+
+```
+destination = "mumbai"
+nights = 2
+```
+
+ the MCP request is:
 
 ```
 {
@@ -563,7 +512,7 @@ result = await client.call_tool(
 }
 ```
 
- The complete MCP flow is:
+ The flow is:
 
 ```
 Hotel Agent
@@ -583,28 +532,34 @@ Hotel Data
 
 ---
 
-# Step 8: Receive Raw Hotel Data
+ # Step 8: Receive Hotel Data
 
- The MCP result is returned using:
+ The MCP response is returned using:
 
 ```
 return result.data
 ```
 
- For example, the MCP tool could return:
+ The returned value is expected to be:
+
+```
+list[dict]
+```
+
+ For example:
 
 ```
 [
-    {
-        "name": "Hotel A",
-        "price": 5000,
-        "rating": 4.5
-    },
-    {
-        "name": "Hotel B",
-        "price": 3500,
-        "rating": 4.2
-    }
+  {
+    "name": "Hotel A",
+    "price": 5000,
+    "rating": 4.5
+  },
+  {
+    "name": "Hotel B",
+    "price": 3500,
+    "rating": 4.2
+  }
 ]
 ```
 
@@ -614,21 +569,11 @@ return result.data
 raw_hotels
 ```
 
- At this point:
-
-```
-MCP
- ↓
-result.data
- ↓
-raw_hotels
-```
-
 ---
 
-# Step 9: Convert Raw Data to Hotel Models
+ # Step 9: Convert Hotel Data to Models
 
- The code then executes:
+ The raw hotel dictionaries are converted into `Hotel` models:
 
 ```
 hotels = [
@@ -637,7 +582,17 @@ hotels = [
 ]
 ```
 
- Each dictionary is converted into a `Hotel` object.
+ Conceptually:
+
+```
+Raw Hotel Dictionary
+        |
+        v
+Hotel(**hotel)
+        |
+        v
+Hotel Model
+```
 
  For example:
 
@@ -659,43 +614,17 @@ Hotel(
 )
 ```
 
- The flow is:
-
-```
-Raw Hotel Dictionary
-        |
-        v
-Hotel(**hotel)
-        |
-        v
-Hotel Pydantic Model
-```
-
- If the MCP returns three hotels:
-
-```
-raw_hotels
-   |
-   +── Hotel 1 → Hotel(...)
-   |
-   +── Hotel 2 → Hotel(...)
-   |
-   +── Hotel 3 → Hotel(...)
-```
-
- Now:
+ The resulting list is stored in:
 
 ```
 hotels
 ```
 
- contains a list of validated `Hotel` objects.
-
 ---
 
-# Step 10: Check Whether Hotels Exist
+ # Step 10: Check for Available Hotels
 
- The code checks:
+ The agent checks:
 
 ```
 if not hotels:
@@ -703,7 +632,7 @@ if not hotels:
 
  There are two possible paths.
 
-## Case A: No hotels
+ ## No Hotels Found
 
  If:
 
@@ -711,9 +640,9 @@ if not hotels:
 hotels = []
 ```
 
- the condition is true.
+ the LLM is not called.
 
- The agent returns:
+ The agent immediately returns:
 
 ```
 HotelAgentResult(
@@ -724,7 +653,7 @@ HotelAgentResult(
 )
 ```
 
- The response is conceptually:
+ Example response:
 
 ```
 {
@@ -737,37 +666,27 @@ HotelAgentResult(
 }
 ```
 
- The LLM is **not called** in this case.
-
 ---
 
-## Case B: Hotels are available
+ ## Hotels Found
 
- If:
+ If hotels are available:
 
 ```
 hotels = [
     Hotel(...),
     Hotel(...),
-    Hotel(...)
+    ...
 ]
 ```
 
- then:
-
-```
-not hotels
-```
-
- is false.
-
- The code continues to the LLM.
+ the agent continues to the LLM.
 
 ---
 
-# Step 11: Prepare Structured LLM
+ # Step 11: Create Structured LLM
 
- The code creates:
+ The agent creates a structured-output LLM:
 
 ```
 llm_with_structure = llm.with_structured_output(
@@ -775,150 +694,113 @@ llm_with_structure = llm.with_structured_output(
 )
 ```
 
- This tells the LLM to return data matching:
+ This tells the LLM to return output matching the:
 
 ```
 HotelAgentResult
 ```
 
- rather than arbitrary text.
+ model.
 
- Conceptually:
+ The flow is:
 
 ```
-Normal LLM
-   ↓
-Free-form response
-
-Structured LLM
-   ↓
+LLM
+ |
+ | Structured output
+ v
 HotelAgentResult
 ```
-
- This helps keep the final response consistent with your API model.
 
 ---
 
-# Step 12: Send Hotel Data to the LLM
+ # Step 12: Send Hotel Data to the LLM
+
+ The agent calls:
+
+```
+result = llm_with_structure.invoke(
+    f"""
+        You are the Hotel Agent.
+
+        User request:
+        {request.message}
+
+        Available hotels:
+        {[hotel.model_dump() for hotel in hotels]}
+
+        Recommend the best hotel.
+
+        Rules:
+        - Do not invent hotels.
+        - Use only supplied hotel data.
+        - Consider rating and price.
+        - Return structured output.
+        """
+)
+```
 
  The LLM receives:
 
-### User request
+ 1. The original user request.
+2. The hotels returned by the MCP tool.
+3. Instructions for making the recommendation.
+
+ The `Hotel` objects are converted into dictionaries using:
 
 ```
-request.message
+hotel.model_dump()
 ```
 
- For example:
+---
+
+ # Step 13: LLM Recommendation
+
+ The LLM's responsibility is to recommend the best hotel from the supplied results.
+
+ The prompt explicitly instructs it to:
 
 ```
-I need a hotel in Mumbai for 3 days
-```
-
-### Available hotels
-
- The code uses:
-
-```
-[hotel.model_dump() for hotel in hotels]
-```
-
- This converts the `Hotel` models into dictionaries.
-
- For example:
-
-```
-[
-    {
-        "name": "Hotel A",
-        "price": 5000,
-        "rating": 4.5
-    },
-    {
-        "name": "Hotel B",
-        "price": 3500,
-        "rating": 4.2
-    }
-]
-```
-
- The LLM receives a prompt conceptually like:
-
-```
-You are the Hotel Agent.
-
-User request:
-I need a hotel in Mumbai for 3 days
-
-Available hotels:
-[
-    {
-        "name": "Hotel A",
-        "price": 5000,
-        "rating": 4.5
-    },
-    {
-        "name": "Hotel B",
-        "price": 3500,
-        "rating": 4.2
-    }
-]
-
-Recommend the best hotel.
-
-Rules:
 - Do not invent hotels.
 - Use only supplied hotel data.
 - Consider rating and price.
 - Return structured output.
 ```
 
----
-
-# Step 13: LLM Recommends the Best Hotel
-
- The LLM now analyzes only the hotels supplied by the MCP tool.
-
- For example:
+ Therefore, the responsibility is separated as follows:
 
 ```
-Hotel A
-Rating: 4.5
-Price: ₹5000
-
-Hotel B
-Rating: 4.2
-Price: ₹3500
+MCP
+ |
+ | Search
+ v
+Hotel Data
+ |
+ v
+LLM
+ |
+ | Analyze
+ | Rating
+ | Price
+ v
+Recommendation
 ```
 
- The LLM could recommend Hotel A because it has the higher rating.
+ The LLM does **not** directly search for hotels.
 
- Or it could recommend Hotel B if it determines that the lower price provides better value.
-
- The important part is:
-
-```
-MCP → Finds hotels
-LLM → Recommends a hotel
-```
-
- The LLM does **not** directly search the hotel database in this code.
+ The MCP tool performs the hotel search.
 
 ---
 
-# Step 14: Add Agent Information
+ # Step 14: Add Agent and Tool Metadata
 
- After the LLM returns a structured result:
+ After the LLM returns its structured result:
 
 ```
 result.agent = "hotel-agent"
 ```
 
- sets:
-
-```
-agent = "hotel-agent"
-```
+ sets the agent name.
 
  Then:
 
@@ -926,11 +808,23 @@ agent = "hotel-agent"
 result.tools_called = ["search_hotels"]
 ```
 
- records the MCP tool that was used.
+ records the MCP tool used during the request.
+
+ The final result therefore contains:
+
+```
+agent
+destination
+hotels
+recommendation
+tools_called
+```
+
+ as defined by `HotelAgentResult`.
 
 ---
 
-# Step 15: Return Final Result
+ # Step 15: Return the Result
 
  Finally:
 
@@ -939,6 +833,8 @@ return result
 ```
 
  returns the `HotelAgentResult`.
+
+ FastAPI serializes the result into the HTTP response.
 
  Conceptually:
 
@@ -958,20 +854,20 @@ return result
       "rating": 4.2
     }
   ],
-  "recommendation": "Hotel A is the best choice because it has the highest rating.",
+  "recommendation": "Hotel A is the best option based on rating and price.",
   "tools_called": [
     "search_hotels"
   ]
 }
 ```
 
- FastAPI then serializes this into the HTTP response.
+ The exact recommendation is generated by the configured LLM.
 
 ---
 
-# Complete End-to-End Example
+ # Complete End-to-End Flow
 
- Suppose the client sends:
+ For this request:
 
 ```
 {
@@ -979,7 +875,7 @@ return result
 }
 ```
 
- The execution is:
+ the code executes:
 
 ```
 1. Client
@@ -989,106 +885,250 @@ return result
 2. FastAPI
    |
    v
-3. handle_request()
+3. AgentRequest
    |
-   | request.message
-   | = "Find me a hotel in Mumbai for 3 days"
    v
-4. Set destination
+4. handle_request()
    |
-   | Default = Goa
+   v
+5. destination = "goa"
    |
    | "mumbai" found
+   v
+6. destination = "mumbai"
    |
    v
-   destination = Mumbai
-   |
-   v
-5. Set nights
-   |
-   | Default = 2
+7. nights = 2
    |
    | "3 day" found
-   |
-   | nights = 2
+   | nights remains 2
    v
-6. call_mcp_hotel_tool(
-       "mumbai",
-       2
-   )
+8. call_mcp_hotel_tool("mumbai", 2)
    |
    v
-7. MCP Client
+9. MCP Client
    |
-   | call_tool()
+   | call_tool("search_hotels", ...)
    v
-8. MCP Gateway
-   |
-   | search_hotels
-   | {
-   |   destination: "mumbai",
-   |   nights: 2
-   | }
-   v
-9. Hotel Search Tool
-   |
-   v
-10. Raw Hotel Data
+10. MCP Gateway
+    |
+    | search_hotels
+    v
+11. Hotel Data
     |
     v
-11. Hotel(**hotel)
+12. Hotel(**hotel)
     |
     v
-12. List[Hotel]
+13. List[Hotel]
     |
     v
-13. Are hotels available?
+14. Check hotels
     |
-    +------ No ------→ Return "No hotels found."
+    +---- No hotels
+    |       |
+    |       v
+    |   Return HotelAgentResult
     |
-    |
-    +------ Yes
-             |
-             v
-14. Create structured LLM
-             |
-             v
-15. Send user request + hotel data
-             |
-             v
-16. LLM evaluates hotels
-             |
-             | Rating
-             | Price
-             v
-17. Best hotel recommendation
-             |
-             v
+    +---- Hotels found
+            |
+            v
+15. Structured LLM
+            |
+            v
+16. User request + hotel data
+            |
+            v
+17. LLM evaluates rating and price
+            |
+            v
 18. HotelAgentResult
-             |
-             v
-19. agent = "hotel-agent"
-             |
-             v
-20. tools_called = ["search_hotels"]
-             |
-             v
+            |
+            v
+19. Set agent = "hotel-agent"
+            |
+            v
+20. Set tools_called = ["search_hotels"]
+            |
+            v
 21. Return JSON
-             |
-             v
+            |
+            v
 22. Client
 ```
 
 ---
 
-# Complete Architecture
+ # Component Responsibilities
+
+ | Component | Responsibility |
+| --- | --- |
+| FastAPI | Exposes the Hotel Agent HTTP API |
+| `AgentRequest` | Represents the incoming request |
+| `AgentCard` | Describes the Hotel Agent |
+| MCP Client | Connects the agent to the MCP Gateway |
+| `search_hotels` | Retrieves hotel data |
+| `Hotel` | Represents structured hotel data |
+| `LLM` | Recommends the best hotel |
+| `HotelAgentResult` | Defines the structured response |
+| `MCP_GATEWAY_URL` | Provides the MCP Gateway location |
+| `get_llm()` | Initializes the LLM |
+
+---
+
+ # MCP and LLM Responsibilities
+
+ The key architectural distinction is:
+
+```
+MCP = Data Retrieval
+LLM = Recommendation
+FastAPI = Orchestration
+```
+
+ ### MCP
+
+ The MCP tool:
+
+```
+search_hotels
+```
+
+ is responsible for retrieving hotel options.
+
+```
+destination
+     +
+nights
+     |
+     v
+search_hotels
+     |
+     v
+Hotel Data
+```
+
+ ### LLM
+
+ The LLM receives the returned hotel data and recommends the best option.
+
+```
+Hotel Data
+     |
+     v
+LLM
+     |
+     | Consider rating and price
+     v
+Recommendation
+```
+
+ ### FastAPI
+
+ The Hotel Agent coordinates the entire process:
+
+```
+Request
+   ↓
+Destination
+   ↓
+Nights
+   ↓
+MCP
+   ↓
+Hotel Models
+   ↓
+LLM
+   ↓
+HotelAgentResult
+```
+
+---
+
+ # Current Destination Logic
+
+ The current implementation uses:
+
+```
+destination = "goa"
+
+if "mumbai" in request.message.lower():
+    destination = "mumbai"
+```
+
+ Therefore:
+
+```
+Mumbai → mumbai
+Everything else → goa
+```
+
+ This means the following request:
+
+```
+"Find a hotel in Mumbai"
+```
+
+ results in:
+
+```
+destination = "mumbai"
+```
+
+ while:
+
+```
+"Find a hotel in Delhi"
+```
+
+ results in:
+
+```
+destination = "goa"
+```
+
+ because `"delhi"` is not handled by the current destination logic.
+
+---
+
+ # Current Nights Logic
+
+ The current implementation uses:
+
+```
+nights = 2
+
+if "3 day" in request.message.lower():
+    nights = 2
+```
+
+ Therefore the effective behavior is:
+
+```
+Default → 2 nights
+"3 day" → 2 nights
+```
+
+ For example:
+
+```
+"Hotel in Mumbai for 3 days"
+              |
+              v
+        destination = mumbai
+        nights = 2
+```
+
+ The `"3 day"` condition does not change the value because both the default and conditional assignment are `2`.
+
+---
+
+ # Final Architecture
 
 ```
                          CLIENT
                            |
-                           |
-                    POST / request
-                           |
+                           | POST /
                            v
                 +---------------------+
                 |     HOTEL AGENT      |
@@ -1098,13 +1138,13 @@ return result
                            v
                  handle_request()
                            |
-                +----------+----------+
-                |                     |
-                v                     v
-          Destination             Nights
-          extraction              extraction
-                |                     |
-                +----------+----------+
+              +------------+------------+
+              |                         |
+              v                         v
+        Destination                  Nights
+          Logic                      Logic
+              |                         |
+              +------------+------------+
                            |
                            v
                 call_mcp_hotel_tool()
@@ -1115,35 +1155,26 @@ return result
                 |    MCP GATEWAY      |
                 +----------+----------+
                            |
-                           |
+                           v
                     search_hotels
                            |
                            v
-                +---------------------+
-                |    Hotel Search     |
-                |       Tool          |
-                +----------+----------+
+                    Hotel Data
                            |
-                           | Hotel data
                            v
-                +---------------------+
-                |   Hotel Pydantic    |
-                |       Models        |
-                +----------+----------+
+                    Hotel Models
                            |
-                           | Validated data
                            v
                 +---------------------+
                 |         LLM         |
                 |                     |
-                | Evaluate price +    |
-                | rating              |
+                | Consider rating +   |
+                | price               |
                 +----------+----------+
                            |
-                           | Recommendation
                            v
                 +---------------------+
-                | HotelAgentResult    |
+                |  HotelAgentResult   |
                 +----------+----------+
                            |
                            v
@@ -1152,268 +1183,38 @@ return result
 
 ---
 
-# Responsibility of Each Component
+ # Summary
 
-| Component            | Responsibility                      |
-| -------------------- | ----------------------------------- |
-| FastAPI              | Exposes HTTP endpoints              |
-| `AgentRequest`     | Validates incoming request          |
-| `AgentCard`        | Describes the Hotel Agent           |
-| MCP Client           | Connects to MCP Gateway             |
-| `search_hotels`    | Retrieves hotel information         |
-| `Hotel`            | Represents a hotel                  |
-| LLM                  | Recommends the best available hotel |
-| `HotelAgentResult` | Defines final response structure    |
-| `MCP_GATEWAY_URL`  | Defines MCP Gateway location        |
-| `get_llm()`        | Creates/configures the LLM          |
-
----
-
-# MCP vs LLM Responsibilities
-
- The most important architectural concept is the separation between **tool execution** and **reasoning**.
+ The Hotel Agent performs the following sequence:
 
 ```
-                 HOTEL AGENT
-                     |
-          +----------+----------+
-          |                     |
-          v                     v
-         MCP                   LLM
-          |                     |
-          v                     v
-  Search actual hotels     Analyze hotels
-          |                     |
-          v                     v
-    Hotel information      Recommendation
-          |                     |
-          +----------+----------+
-                     |
-                     v
-              Final Response
+Receive HTTP request
+        ↓
+Determine destination
+        ↓
+Determine number of nights
+        ↓
+Call MCP search_hotels
+        ↓
+Receive hotel data
+        ↓
+Convert data to Hotel models
+        ↓
+Check for available hotels
+        ↓
+Create structured LLM
+        ↓
+Provide hotel data to LLM
+        ↓
+LLM evaluates rating and price
+        ↓
+Generate HotelAgentResult
+        ↓
+Add agent/tool metadata
+        ↓
+Return HTTP response
 ```
 
-### MCP
+ **In short: the Hotel Agent uses MCP to retrieve hotels, uses the LLM to recommend the best hotel based on the supplied data, and uses FastAPI to expose and orchestrate the complete agent workflow.**
 
- MCP is responsible for:
-
-```
-"Find hotels in Mumbai for 2 nights."
-```
-
- It returns actual hotel data.
-
-### LLM
-
- The LLM is responsible for:
-
-```
-"Given these hotels, which one is the best?"
-```
-
- It analyzes:
-
-```
-Price
-Rating
-User request
-```
-
- and produces the recommendation.
-
-### FastAPI Agent
-
- The Hotel Agent coordinates everything:
-
-```
-Receive request
-      ↓
-Determine parameters
-      ↓
-Call MCP
-      ↓
-Get hotel data
-      ↓
-Call LLM
-      ↓
-Return structured response
-```
-
----
-
-# Important Issue in the Current Code
-
- There is a suspicious piece of logic:
-
-```
-nights = 2
-
-if "3 day" in request.message.lower():
-    nights = 2
-```
-
- Both branches set `nights` to `2`.
-
- Therefore:
-
-```
-User: "hotel for 3 days"
-             ↓
-"3 day" detected
-             ↓
-nights = 2
-```
-
- So the condition currently has **no effect**.
-
- If your intention is that:
-
-```
-3 days → 2 nights
-```
-
- then the current code is actually correct from a hotel-stay perspective, because a 3-day trip can represent 2 hotel nights.
-
- For example:
-
-```
-Day 1 → Check-in
-Day 2 → Stay
-Day 3 → Check-out
-```
-
- means:
-
-```
-2 nights
-```
-
- If instead you mean:
-
-```
-3 days → 3 hotel nights
-```
-
- then it should be:
-
-```
-if "3 day" in request.message.lower():
-    nights = 3
-```
-
- So the intended business meaning needs to be clear.
-
----
-
-# Current Limitations
-
- The current destination extraction is hard-coded:
-
-```
-destination = "goa"
-
-if "mumbai" in request.message.lower():
-    destination = "mumbai"
-```
-
- This means:
-
-```
-Mumbai → Mumbai
-Anything else → Goa
-```
-
- Similarly, the nights extraction only recognizes:
-
-```
-"3 day"
-```
-
- and doesn't dynamically handle:
-
-```
-1 night
-2 nights
-3 nights
-5 nights
-one week
-4 days
-weekend
-```
-
- A more scalable design would be:
-
-```
-User Request
-     |
-     v
-LLM / Request Parser
-     |
-     +---- destination
-     |
-     +---- check-in
-     |
-     +---- check-out
-     |
-     +---- number of nights
-     |
-     +---- budget
-     |
-     v
-MCP search_hotels
-     |
-     v
-Hotel Results
-     |
-     v
-LLM Recommendation
-     |
-     v
-HotelAgentResult
-```
-
----
-
-# Final Summary
-
- The Hotel Agent follows this pipeline:
-
-```
-User
-  ↓
-FastAPI
-  ↓
-AgentRequest
-  ↓
-Extract destination
-  ↓
-Extract nights
-  ↓
-MCP Client
-  ↓
-MCP Gateway
-  ↓
-search_hotels
-  ↓
-Raw hotel data
-  ↓
-Hotel Pydantic models
-  ↓
-Check if hotels exist
-  ↓
-Structured LLM
-  ↓
-Evaluate price + rating
-  ↓
-Hotel recommendation
-  ↓
-HotelAgentResult
-  ↓
-FastAPI JSON response
-  ↓
-User
-```
-
- **In one sentence:**
-
-> The Hotel Agent receives a travel request, determines the destination and number of nights, uses the MCP `search_hotels` tool to retrieve real hotel options, converts them into `Hotel` models, passes those options to the LLM for a price-and-rating-based recommendation, and returns the result as a structured `HotelAgentResult`.
+ This version sticks closely to the code you supplied and explicitly documents the current `"mumbai"`/`"goa"` destination behavior and the `2-night` behavior.
