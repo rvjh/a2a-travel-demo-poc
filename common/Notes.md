@@ -26,3 +26,6 @@ configuration about llms and urls
 Shared LLM common/llm.py
 
 llm setup
+
+LangChain models support structured output through Pydantic schemas, which is exactly what we want for the router and final travel response.
+
