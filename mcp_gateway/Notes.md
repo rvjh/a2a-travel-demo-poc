@@ -1,24 +1,19 @@
 MCP Gateway
-This is where the actual fake travel database/tools live.
 
-The agents don't directly import these functions.
+This is the tool layer.
 
-That distinction is important.
+It is not an agent.
 
-WRONG
+It provides deterministic tools and its definitions like light destination , price etc
 
-Flight Agent
-   |
-   +--> import search_flights()
+The important part is:
 
-RIGHT
+mcp.run(
+    transport="http",
+    host="127.0.0.1",
+    port=9000,
+)
 
-Flight Agent
-   |
-   +--> MCP Client
-            |
-            v
-       MCP Gateway
-            |
-            v
-       flight_search()
+Current FastMCP documentation describes this HTTP transport as Streamable HTTP and the server is available at /mcp.
+
+MCP endpoint : http://127.0.0.1:9000/mcp
