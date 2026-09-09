@@ -1,5 +1,3 @@
-Below is a cleaned-up, consistent README that fixes the architecture direction, startup behavior, terminology, formatting, and folder structure.
-
 # A2A Travel Agent POC
 
  A small **Travel Agent Proof of Concept (POC)** demonstrating how **A2A, MCP, LangGraph, Groq, Pydantic, and FastAPI** can work together in a multi-agent system.
