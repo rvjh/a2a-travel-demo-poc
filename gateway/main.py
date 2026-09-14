@@ -28,10 +28,7 @@ async def plan_trip(request: AgentRequest):
     started = time.perf_counter()
 
     try:
-        async with httpx.AsyncClient(
-            timeout=120
-        ) as client:
-
+        async with httpx.AsyncClient(timeout=120) as client:
             response = await client.post(
                 f"{ROUTER_AGENT_URL}/",
                 json=request.model_dump(),

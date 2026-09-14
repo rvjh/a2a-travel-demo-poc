@@ -305,9 +305,7 @@ async def health():
 
 
 @app.post("/")
-async def travel(
-    request: AgentRequest,
-):
+async def travel(request: AgentRequest):
 
     result = await travel_graph.ainvoke(
         {
@@ -315,28 +313,18 @@ async def travel(
         }
     )
 
-    decision = result[
-        "router_decision"
-    ]
+    decision = result["router_decision"]
 
-    flight_result = result.get(
-        "flight_result"
-    )
+    flight_result = result.get("flight_result")
 
-    hotel_result = result.get(
-        "hotel_result"
-    )
+    hotel_result = result.get("hotel_result")
 
     return {
         "agent": "travel-router-agent",
 
-        "destination": (
-            decision.destination
-        ),
+        "destination": (decision.destination),
 
-        "decision": (
-            decision.model_dump()
-        ),
+        "decision": (decision.model_dump()),
 
         "flight_agent": (
             flight_result.model_dump()

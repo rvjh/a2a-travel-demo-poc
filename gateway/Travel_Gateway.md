@@ -1,6 +1,6 @@
 # Travel Gateway
 
- ## Overview
+## Overview
 
  The **Travel Gateway** is the entry point for clients in the travel planning system.
 
@@ -32,11 +32,11 @@ Gateway Response
 
 ---
 
- ## Main Responsibilities
+## Main Responsibilities
 
  The Travel Gateway:
 
- - Accepts travel planning requests.
+- Accepts travel planning requests.
 - Sends requests to the Router Agent.
 - Handles Router Agent connection/errors.
 - Measures request latency.
@@ -45,9 +45,9 @@ Gateway Response
 
 ---
 
- ## API Endpoints
+## API Endpoints
 
- ### Health Check
+### Health Check
 
 ```
 GET /
@@ -65,7 +65,7 @@ GET /
 
 ---
 
- ### Plan Trip
+### Plan Trip
 
 ```
 POST /plan
@@ -89,7 +89,7 @@ ROUTER_AGENT_URL/
 
 ---
 
- ## Router Communication
+## Router Communication
 
  The Gateway uses `httpx.AsyncClient` to communicate with the Router Agent:
 
@@ -118,7 +118,7 @@ ROUTER_AGENT_URL
 
 ---
 
- ## Error Handling
+## Error Handling
 
  If the Router Agent is unavailable or returns an HTTP error, the Gateway returns:
 
@@ -136,7 +136,7 @@ Router Agent unavailable
 
 ---
 
- ## Latency Tracking
+## Latency Tracking
 
  The Gateway measures how long the Router request takes:
 
@@ -156,7 +156,7 @@ started = time.perf_counter()
 
 ---
 
- ## Final Response
+## Final Response
 
  The Gateway extracts information from the Router response and returns:
 
@@ -180,7 +180,7 @@ started = time.perf_counter()
 
 ---
 
- ## Agents and Tools Tracking
+## Agents and Tools Tracking
 
  The Gateway identifies which agents were used:
 
@@ -204,7 +204,7 @@ tools_called
 
 ---
 
- ## Overall Architecture
+## Overall Architecture
 
 ```
                   Client
@@ -241,6 +241,6 @@ tools_called
                   Client
 ```
 
- ## Key Point
+## Key Point
 
- > **The Travel Gateway is the API entry point and coordinator-facing boundary. It receives client requests, forwards them to the Router Agent, handles errors and latency tracking, and returns a clean final travel-plan response.**
+> **The Travel Gateway is the API entry point and coordinator-facing boundary. It receives client requests, forwards them to the Router Agent, handles errors and latency tracking, and returns a clean final travel-plan response.**
